@@ -67,8 +67,16 @@ public class MobileInputLoader : MonoBehaviour
             // FORCE CLEANUP: Ensure no mobile controls exist on Desktop
             if (MobileJoystick.Instance != null)
             {
-                // Destroy the entire canvas/root of the joystick
-                Destroy(MobileJoystick.Instance.transform.root.gameObject);
+                // Safety Check: Only destroy root if it's the dedicated MobileInputCanvas
+                // Otherwise, just destroy the joystick object itself to avoid deleting Main UI
+                if (MobileJoystick.Instance.transform.root.name.Contains("MobileInputCanvas"))
+                {
+                    Destroy(MobileJoystick.Instance.transform.root.gameObject);
+                }
+                else
+                {
+                    Destroy(MobileJoystick.Instance.gameObject);
+                }
                 Debug.Log("MobileInputLoader: Removed Mobile Joystick for Desktop platform.");
             }
         }
