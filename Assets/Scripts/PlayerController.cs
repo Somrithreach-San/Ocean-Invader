@@ -596,22 +596,24 @@ public class PlayerController : MonoBehaviour
         // else block removed (Animation cleanup)
 
         // 5. Boost
+        // FIX: Ensure single-frame press logic for ALL inputs (Keyboard, Mouse, Mobile)
         bool spacePressed = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
+        
+        // Mobile Boost: Using WasPressedThisFrame logic from MobileBoostButton script
         bool mobileBoostPressed = MobileBoostButton.Instance != null && MobileBoostButton.Instance.WasPressedThisFrame;
         
-        if (boostInput || spacePressed || mobileBoostPressed)
+        // Mouse Boost: Already checked via wasPressedThisFrame above
+        
+        if ((boostInput || spacePressed || mobileBoostPressed) && boostTimer <= 0)
         {
-            if (boostTimer <= 0)
+            // Play Start Sound (ONCE)
+            if (audioSource != null && boostStartClip != null)
+                audioSource.PlayOneShot(boostStartClip, boostStartVolume);
+            
+            // Play Particles
+            if (speedEffect != null)
             {
-                // play start sound
-                if (audioSource != null && boostStartClip != null)
-                    audioSource.PlayOneShot(boostStartClip, boostStartVolume);
-                
-                // Play Particles
-                if (speedEffect != null)
-                {
-                    speedEffect.Play();
-                }
+                speedEffect.Play();
             }
 
             boostTimer = boostDuration;

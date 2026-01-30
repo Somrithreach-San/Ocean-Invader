@@ -94,12 +94,6 @@ public class GridController : MonoBehaviour
 
     private void Start()
     {
-        // Migration: Update spawnInterval to new faster default if it's still at the old default
-        if (Mathf.Abs(spawnInterval - 2.0f) < 0.01f)
-        {
-             spawnInterval = 1.5f;
-        }
-
         // Ensure hazard chance is reasonable
     }
 
