@@ -47,7 +47,8 @@ public class GridController : MonoBehaviour
     private GameObject hazardBubblePrefab;
     
     // Track active hazard to limit to 1
-    private GameObject activeHazard;
+    private List<GameObject> activeHazards = new List<GameObject>();
+    private bool isSpawningHazards = false; // Flag to prevent multiple coroutines
 
     [Header("Shark Hazard Settings")]
     [SerializeField]
@@ -85,6 +86,13 @@ public class GridController : MonoBehaviour
 
     private void Awake()
     {
+        // Ensure ObjectPoolManager exists
+        if (ObjectPoolManager.Instance == null)
+        {
+            GameObject poolObj = new GameObject("ObjectPoolManager");
+            poolObj.AddComponent<ObjectPoolManager>();
+        }
+
         EventManager.StartListening<GameObject>("PlayerSpawn", (spawnedObject) =>
         {
             if (spawnedObject != null)
@@ -135,9 +143,12 @@ public class GridController : MonoBehaviour
                 effectiveHazardChance = 0.7f; 
             }
 
-            if (activeHazard == null && Random.value < effectiveHazardChance)
+            // Clean up nulls
+            activeHazards.RemoveAll(h => h == null);
+
+            if (activeHazards.Count == 0 && !isSpawningHazards && Random.value < effectiveHazardChance)
             {
-                SpawnHazard();
+                StartCoroutine(SpawnHazardsRoutine());
                 return; 
             }
 
@@ -388,7 +399,7 @@ public class GridController : MonoBehaviour
             // This handles High-Level fish that leave the screen and keep going.
             if (!distantBounds.Contains(fish.transform.position))
             {
-                Destroy(fish.gameObject);
+                fish.DespawnSelf();
                 return true; 
             }
 
@@ -400,7 +411,7 @@ public class GridController : MonoBehaviour
                 if (!viewBounds.Contains(fish.transform.position))
                 {
                     // Found one! Cull it.
-                    Destroy(fish.gameObject);
+                    fish.DespawnSelf();
                     return true; // Culled one, job done.
                 }
             }
@@ -409,126 +420,220 @@ public class GridController : MonoBehaviour
         return false;
     }
 
-    private void SpawnHazard()
+    private IEnumerator SpawnHazardsRoutine()
     {
-        // Double check
-        if (activeHazard != null) return;
+        isSpawningHazards = true;
 
-        GameObject hazardObj = null;
-
-        if (hazardPrefab != null)
+        // Double check count (activeHazards should be empty when calling this, but safety first)
+        activeHazards.RemoveAll(h => h == null);
+        if (activeHazards.Count > 0) 
         {
-            hazardObj = Instantiate(hazardPrefab);
+            isSpawningHazards = false;
+            yield break;
         }
-        else if (hazardSprite != null)
+
+        // Randomly decide how many to spawn: 1 or 2
+        // User Request: "sometime 1 sometime 2"
+        int spawnCount = (Random.value > 0.5f) ? 2 : 1;
+        
+        for (int i = 0; i < spawnCount; i++)
         {
-            // Fallback: Create hazard from sprite
-            // OPTIMIZATION: Use Template
-            if (hazardTemplate == null)
+            // Delay for the second one to desynchronize
+            if (i > 0)
             {
-                hazardTemplate = new GameObject("Hazard_Template");
-                hazardTemplate.transform.SetParent(transform);
-                hazardTemplate.SetActive(false);
-                
-                SpriteRenderer sr = hazardTemplate.AddComponent<SpriteRenderer>();
-                sr.sprite = hazardSprite; // Default
-                
-                BoxCollider2D col = hazardTemplate.AddComponent<BoxCollider2D>();
-                col.isTrigger = true;
-                if (sr.sprite != null) col.size = sr.sprite.bounds.size;
-                
-                hazardTemplate.AddComponent<Hazard>();
-                hazardTemplate.tag = "Enemy";
-                hazardTemplate.transform.localScale = Vector3.one * hazardScale;
+                // Random delay between 0.5s and 2.5s
+                yield return new WaitForSeconds(Random.Range(0.5f, 2.5f));
             }
 
-            hazardObj = Instantiate(hazardTemplate);
-            hazardObj.name = "Hazard_Hook";
-            hazardObj.SetActive(true);
+            GameObject hazardObj = null;
 
-            // Randomly choose between default and variant if available
-            SpriteRenderer objSr = hazardObj.GetComponent<SpriteRenderer>();
-            if (objSr != null)
+            if (hazardPrefab != null)
             {
-                if (hazardSpriteVariant != null && Random.value > 0.5f)
-                {
-                    objSr.sprite = hazardSpriteVariant;
-                }
-                else
-                {
-                    objSr.sprite = hazardSprite;
-                }
+                hazardObj = Instantiate(hazardPrefab);
             }
-        }
-        else
-        {
-            // EMERGENCY FALLBACK: Red Quad
-            Debug.LogWarning("[GridController] Hazard Prefab AND Sprite are missing! Spawning Red Quad fallback.");
-            hazardObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            hazardObj.name = "Hazard_Fallback";
-            Destroy(hazardObj.GetComponent<Collider>()); // Remove 3D collider
-            
-            BoxCollider2D col = hazardObj.AddComponent<BoxCollider2D>();
-            col.isTrigger = true;
-            col.size = new Vector2(1f, 1f);
-
-            hazardObj.AddComponent<Hazard>();
-            hazardObj.tag = "Enemy";
-            
-            Renderer r = hazardObj.GetComponent<Renderer>();
-            if (r != null) r.material.color = Color.red;
-            
-            hazardObj.transform.localScale = new Vector3(1.5f, 1.5f, 1f); // Visible size
-        }
-
-        if (hazardObj != null)
-        {
-            activeHazard = hazardObj; // Track it
-
-            // Inject Effects (if missing)
-            Hazard h = hazardObj.GetComponent<Hazard>();
-            if (h != null)
+            else if (hazardSprite != null)
             {
-                Material pMat = null;
-                Texture2D pTex = null;
-                if (player != null)
+                // Fallback: Create hazard from sprite
+                // OPTIMIZATION: Use Template
+                if (hazardTemplate == null)
                 {
-                    PlayerController pc = player.GetComponent<PlayerController>();
-                    if (pc != null)
+                    hazardTemplate = new GameObject("Hazard_Template");
+                    hazardTemplate.transform.SetParent(transform);
+                    hazardTemplate.SetActive(false);
+                    
+                    SpriteRenderer sr = hazardTemplate.AddComponent<SpriteRenderer>();
+                    sr.sprite = hazardSprite; // Default
+                    
+                    BoxCollider2D col = hazardTemplate.AddComponent<BoxCollider2D>();
+                    col.isTrigger = true;
+                    if (sr.sprite != null) col.size = sr.sprite.bounds.size;
+                    
+                    hazardTemplate.AddComponent<Hazard>();
+                    hazardTemplate.tag = "Enemy";
+                    hazardTemplate.transform.localScale = Vector3.one * hazardScale;
+                }
+
+                hazardObj = Instantiate(hazardTemplate);
+                hazardObj.name = "Hazard_Hook_" + i;
+                hazardObj.SetActive(true);
+
+                // Randomly choose between default and variant if available
+                SpriteRenderer objSr = hazardObj.GetComponent<SpriteRenderer>();
+                if (objSr != null)
+                {
+                    if (hazardSpriteVariant != null && Random.value > 0.5f)
                     {
-                        pMat = pc.BubbleMaterial;
-                        pTex = pc.BubbleTexture;
+                        objSr.sprite = hazardSpriteVariant;
+                    }
+                    else
+                    {
+                        objSr.sprite = hazardSprite;
                     }
                 }
-                h.Initialize(hazardSound, hazardBubblePrefab, pMat, pTex);
+            }
+            else
+            {
+                // EMERGENCY FALLBACK: Red Quad
+                Debug.LogWarning("[GridController] Hazard Prefab AND Sprite are missing! Spawning Red Quad fallback.");
+                hazardObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                hazardObj.name = "Hazard_Fallback_" + i;
+                Destroy(hazardObj.GetComponent<Collider>()); // Remove 3D collider
+                
+                BoxCollider2D col = hazardObj.AddComponent<BoxCollider2D>();
+                col.isTrigger = true;
+                col.size = new Vector2(1f, 1f);
+
+                hazardObj.AddComponent<Hazard>();
+                hazardObj.tag = "Enemy";
+                
+                Renderer r = hazardObj.GetComponent<Renderer>();
+                if (r != null) r.material.color = Color.red;
+                
+                hazardObj.transform.localScale = new Vector3(1.5f, 1.5f, 1f); // Visible size
             }
 
-            Camera cam = Camera.main;
-            if (cam == null) return;
+            if (hazardObj != null)
+            {
+                activeHazards.Add(hazardObj); // Track it
 
-            float camHeight = 2f * cam.orthographicSize;
-            float camWidth = camHeight * cam.aspect;
-            float halfWidth = camWidth / 2f;
-            
-            // Spawn at top, random X within Fixed World Bounds
-            // User Request: "spawn based on the game sense itself", not camera.
-            // But also: "dont spawn outside of the background or the player bounderies"
-            // We clamp spawnX to be within the visible width (plus margin) to ensure it's "in play".
-            
-            float bgLimit = halfWidth - 1f; // Keep it slightly inside camera/bg edges
-            float spawnX = Random.Range(-bgLimit, bgLimit);
-            
-            // Offset by camera position to keep it relative to view if camera moves
-            spawnX += cam.transform.position.x;
+                // Calculate Random Depth
+                // User Request: "sometime spawn the fisherman hazard shallow or deep"
+                // Range: -13f (Deep) to 5f (Shallow). 
+                // We keep 12f as theoretical max shallow, but let's be more specific.
+                
+                float randomDepth;
+                float roll = Random.value;
+                
+                if (roll < 0.4f) // 40% Deep
+                {
+                    randomDepth = Random.Range(-13f, -5f);
+                }
+                else if (roll < 0.8f) // 40% Mid/Shallow
+                {
+                    randomDepth = Random.Range(-5f, 5f);
+                }
+                else // 20% Very Shallow (Surface skim)
+                {
+                    randomDepth = Random.Range(5f, 10f);
+                }
 
-            // Fixed Surface Level Spawning (User Request: "not based on player camera")
-            // Game vertical bounds are approx -14 to 14. 
-            // We spawn high enough (22f) to ensure the top of the line/rod is off-screen initially,
-            // preventing the "line cut off" visual issue when the player is near the surface.
-            float spawnY = 22f; 
-            
-            hazardObj.transform.position = new Vector3(spawnX, spawnY, 0);
+                // Inject Effects & Depth
+                Hazard h = hazardObj.GetComponent<Hazard>();
+                if (h != null)
+                {
+                    Material pMat = null;
+                    Texture2D pTex = null;
+                    if (player != null)
+                    {
+                        PlayerController pc = player.GetComponent<PlayerController>();
+                        if (pc != null)
+                        {
+                            pMat = pc.BubbleMaterial;
+                            pTex = pc.BubbleTexture;
+                        }
+                    }
+                    h.Initialize(hazardSound, hazardBubblePrefab, pMat, pTex, randomDepth);
+                }
+
+                Camera cam = Camera.main;
+                if (cam != null)
+                {
+                    float camHeight = 2f * cam.orthographicSize;
+                    float camWidth = camHeight * cam.aspect;
+                    float halfWidth = camWidth / 2f;
+                    
+                    float bgLimit = halfWidth - 1f; 
+                    float spawnX = 0f;
+
+                    // Improved Distribution Logic for 2 Hazards
+                    if (spawnCount == 2)
+                    {
+                        // Split screen into two zones: Left and Right
+                        // i=0: Randomly pick Left or Right
+                        // i=1: Pick the other side
+                        
+                        // We can just use 'i' to determine side if we randomize the starting side
+                        // But let's be explicit.
+                        
+                        float quarterWidth = bgLimit / 2f;
+                        
+                        // RESET spawnX calculation for clarity
+                        float center = cam.transform.position.x;
+                        
+                        if (i == 0)
+                        {
+                             // Pick a random side for the first one
+                             bool startLeft = (Random.value > 0.5f);
+                             if (startLeft) spawnX = Random.Range(center - bgLimit, center - 2f);
+                             else spawnX = Random.Range(center + 2f, center + bgLimit);
+                        }
+                        else
+                        {
+                             // Second one: Check previous
+                             float prevX = center;
+                             if (activeHazards.Count > 1) prevX = activeHazards[activeHazards.Count - 2].transform.position.x;
+                             
+                             if (prevX < center)
+                             {
+                                 // Previous was Left -> Spawn Right
+                                 spawnX = Random.Range(center + 2f, center + bgLimit);
+                             }
+                             else
+                             {
+                                 // Previous was Right -> Spawn Left
+                                 spawnX = Random.Range(center - bgLimit, center - 2f);
+                             }
+                        }
+                    }
+                    else
+                    {
+                        // Single spawn: Pure random
+                        spawnX = Random.Range(cam.transform.position.x - bgLimit, cam.transform.position.x + bgLimit);
+                    }
+
+                    float spawnY = 22f;
+                    
+                    // Dynamic Spawn Y: Always spawn above the camera view
+                    // This prevents "popping" in if the camera moves or if the sprite is long
+                    SpriteRenderer sr = hazardObj.GetComponent<SpriteRenderer>();
+                    if (sr != null)
+                    {
+                        float halfHeight = sr.bounds.extents.y;
+                        float camTop = cam.transform.position.y + (camHeight / 2f);
+                        spawnY = camTop + halfHeight + 5f; // Buffer to be safe
+                    }
+                    else
+                    {
+                        float camTop = cam.transform.position.y + (camHeight / 2f);
+                        spawnY = camTop + 10f;
+                    }
+                    
+                    hazardObj.transform.position = new Vector3(spawnX, spawnY, 0);
+                }
+            }
         }
+        
+        isSpawningHazards = false;
     }
 
     private void SpawnShark()

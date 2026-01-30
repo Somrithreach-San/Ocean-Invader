@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -102,7 +102,18 @@ namespace Rhinotap.StateMachine
             }
         }
 
-
+        public void ClearMemory()
+        {
+            memory.Clear();
+            _timeInThisState = 0f;
+            // Also reset to initial state if needed?
+            // Usually keeping current state is bad if it's "dead" or "fleeing".
+            // Ideally we reset to "Wander" or whatever the default is.
+            // But _currentState is serialized. We should probably reset to the initial state defined in Inspector if possible.
+            // But we don't store the "original" state.
+            // Assuming the fish spawns in a neutral state or the Action resets it.
+            // FishWanderAction calls Initialize which sets things up.
+        }
 
         private void OnDrawGizmos()
         {

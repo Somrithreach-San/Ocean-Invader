@@ -37,8 +37,11 @@ public class MobileInputSetup : EditorWindow
         bgRect.anchorMin = new Vector2(0f, 0f); // Bottom Left
         bgRect.anchorMax = new Vector2(0f, 0f);
         bgRect.pivot = new Vector2(0f, 0f);
-        bgRect.anchoredPosition = new Vector2(250, 150); // Restore original position (Moved Right for better thumb reach)
-        bgRect.sizeDelta = new Vector2(250, 250); // Restore original background size
+        // IMPROVED SIZING:
+        // Standard recommendation for Virtual Joysticks is a large touch area.
+        // 360px on 1080p is ~33% of screen height, ensuring it's hard to miss.
+        bgRect.anchoredPosition = new Vector2(200, 150); 
+        bgRect.sizeDelta = new Vector2(360, 360); 
 
         // 3. Create Joystick Handle
         GameObject handle = new GameObject("JoystickHandle");
@@ -53,13 +56,15 @@ public class MobileInputSetup : EditorWindow
         handleRect.anchorMax = new Vector2(0.5f, 0.5f);
         handleRect.pivot = new Vector2(0.5f, 0.5f);
         handleRect.anchoredPosition = Vector2.zero;
-        handleRect.sizeDelta = new Vector2(150, 150); // Keep Handle Big (60% of background)
+        handleRect.sizeDelta = new Vector2(160, 160); // Slightly larger handle
 
         // 4. Add MobileJoystick Component
         MobileJoystick joystick = bg.AddComponent<MobileJoystick>();
         joystick.background = bgRect;
         joystick.handle = handleRect;
-        joystick.handleRange = 1f;
+        // Reduce range to 0.6f so the user doesn't have to drag the full 180px radius to get max speed.
+        // 180px * 0.6 = 108px travel distance (Quick & Responsive)
+        joystick.handleRange = 0.6f; 
         joystick.hideOnDesktop = true;
 
         // 5. Create Boost Button (Background)
@@ -73,8 +78,9 @@ public class MobileInputSetup : EditorWindow
         boostRect.anchorMin = new Vector2(1f, 0f); // Bottom Right
         boostRect.anchorMax = new Vector2(1f, 0f);
         boostRect.pivot = new Vector2(1f, 0f);
-        boostRect.anchoredPosition = new Vector2(-250, 150); // Mirrored position (Moved Left for better thumb reach)
-        boostRect.sizeDelta = new Vector2(250, 250); // Same size as joystick background
+        // Large target for action button
+        boostRect.anchoredPosition = new Vector2(-200, 150); 
+        boostRect.sizeDelta = new Vector2(320, 320); 
         
         // Add Script
         boostBtn.AddComponent<MobileBoostButton>();

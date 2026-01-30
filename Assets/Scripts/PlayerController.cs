@@ -112,6 +112,10 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float smoothTime = 0.03f; // Reduced for snappier response (was 0.05f)
     [SerializeField] private float tiltAngle = 20f; // Max tilt angle in degrees
     [SerializeField] private float tiltSpeed = 10f; // How fast we tilt
+    
+    // Optimization: Cache the generated material to prevent lag on spawn
+    private static Material _cachedGeneratedMaterial;
+    
     #endregion
 
     #region Mono Behaviour
@@ -347,29 +351,39 @@ public class PlayerController : MonoBehaviour
         }
         else if (bubbleTexture != null)
         {
-            // Create a temporary material at runtime using the texture
-            Shader shader = Shader.Find("Particles/Standard Unlit");
-            if (shader == null) shader = Shader.Find("Mobile/Particles/Alpha Blended");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-
-            if (shader != null)
+            // Optimization: Check cache first
+            if (_cachedGeneratedMaterial != null)
             {
-                Material mat = new Material(shader);
-                mat.mainTexture = bubbleTexture;
-                
-                // Set some standard particle settings if using Standard Unlit
-                if (shader.name.Contains("Standard"))
+                renderer.material = _cachedGeneratedMaterial;
+            }
+            else
+            {
+                // Create a temporary material at runtime using the texture
+                Shader shader = Shader.Find("Particles/Standard Unlit");
+                if (shader == null) shader = Shader.Find("Mobile/Particles/Alpha Blended");
+                if (shader == null) shader = Shader.Find("Sprites/Default");
+    
+                if (shader != null)
                 {
-                     mat.SetFloat("_Mode", 2); // Fade
-                     mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                     mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                     mat.SetInt("_ZWrite", 0);
-                     mat.DisableKeyword("_ALPHATEST_ON");
-                     mat.EnableKeyword("_ALPHABLEND_ON");
-                     mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-                     mat.renderQueue = 3000;
+                    Material mat = new Material(shader);
+                    mat.mainTexture = bubbleTexture;
+                    
+                    // Set some standard particle settings if using Standard Unlit
+                    if (shader.name.Contains("Standard"))
+                    {
+                         mat.SetFloat("_Mode", 2); // Fade
+                         mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                         mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                         mat.SetInt("_ZWrite", 0);
+                         mat.DisableKeyword("_ALPHATEST_ON");
+                         mat.EnableKeyword("_ALPHABLEND_ON");
+                         mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                         mat.renderQueue = 3000;
+                    }
+                    
+                    _cachedGeneratedMaterial = mat;
+                    renderer.material = mat;
                 }
-                renderer.material = mat;
             }
         }
         
@@ -451,14 +465,39 @@ public class PlayerController : MonoBehaviour
         }
         else if (bubbleTexture != null)
         {
-             // Reuse the shader logic or just assign default
-             Shader shader = Shader.Find("Particles/Standard Unlit");
-             if (shader == null) shader = Shader.Find("Sprites/Default");
-             if (shader != null)
+             // Optimization: Check cache first
+             if (_cachedGeneratedMaterial != null)
              {
-                 Material mat = new Material(shader);
-                 mat.mainTexture = bubbleTexture;
-                 renderer.material = mat;
+                 renderer.material = _cachedGeneratedMaterial;
+             }
+             else
+             {
+                 // Reuse the shader logic or just assign default
+                 Shader shader = Shader.Find("Particles/Standard Unlit");
+                 if (shader == null) shader = Shader.Find("Mobile/Particles/Alpha Blended");
+                 if (shader == null) shader = Shader.Find("Sprites/Default");
+                 
+                 if (shader != null)
+                 {
+                     Material mat = new Material(shader);
+                     mat.mainTexture = bubbleTexture;
+                     
+                     // Set some standard particle settings if using Standard Unlit
+                     if (shader.name.Contains("Standard"))
+                     {
+                          mat.SetFloat("_Mode", 2); // Fade
+                          mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                          mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                          mat.SetInt("_ZWrite", 0);
+                          mat.DisableKeyword("_ALPHATEST_ON");
+                          mat.EnableKeyword("_ALPHABLEND_ON");
+                          mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                          mat.renderQueue = 3000;
+                     }
+                     
+                     _cachedGeneratedMaterial = mat;
+                     renderer.material = mat;
+                 }
              }
         }
         

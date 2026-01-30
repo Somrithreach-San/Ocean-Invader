@@ -98,7 +98,17 @@ public class EnemyLibrary : ScriptableObject
             position.y += RandomizeY;
         }
 
-        GameObject newFish = GameObject.Instantiate(prefab.gameObject, position, Quaternion.identity);
+        GameObject newFish;
+        
+        if (ObjectPoolManager.Instance != null)
+        {
+            newFish = ObjectPoolManager.Instance.Spawn(prefab.gameObject, position, Quaternion.identity);
+        }
+        else
+        {
+            newFish = GameObject.Instantiate(prefab.gameObject, position, Quaternion.identity);
+        }
+
         Fish fishComp = newFish.GetComponent<Fish>();
         
         if (fishComp != null && overrideLevel > 0)

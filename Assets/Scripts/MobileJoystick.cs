@@ -58,6 +58,24 @@ public class MobileJoystick : MonoBehaviour, IDragHandler, IPointerUpHandler, IP
         else
         {
             gameObject.SetActive(true);
+            
+            // AUTO-FIX: Enforce standard mobile sizing (User Request: Responsiveness & Size)
+            // If the joystick is too small (old standard 250), upgrade it to 360.
+            if (background != null && background.sizeDelta.x < 300)
+            {
+                background.sizeDelta = new Vector2(360, 360);
+                background.anchoredPosition = new Vector2(200, 150); // Improved position
+                
+                if (handle != null)
+                {
+                    handle.sizeDelta = new Vector2(160, 160);
+                }
+                
+                // Improve responsiveness: Reduce travel distance
+                handleRange = 0.6f; 
+                
+                Debug.Log("MobileJoystick: Auto-upgraded size and responsiveness settings.");
+            }
         }
     }
 

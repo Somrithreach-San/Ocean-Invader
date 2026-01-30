@@ -58,12 +58,23 @@ public class FishMovement : MonoBehaviour
         wanderTarget = new Vector2(Mathf.Cos(theta), Mathf.Sin(theta)) * wanderRadius;
     }
 
-    private void Start()
+    private void OnEnable()
     {
         if (!enabled) return;
         player = GameManager.instance != null ? GameManager.instance.playerGameObject?.transform : null;
         currentDirection = transform.right;
         if (currentDirection == Vector2.zero) currentDirection = Vector2.right;
+        
+        // Reset wander target
+        float theta = Random.value * 2 * Mathf.PI;
+        wanderTarget = new Vector2(Mathf.Cos(theta), Mathf.Sin(theta)) * wanderRadius;
+    }
+
+    private void Start()
+    {
+        if (!enabled) return;
+        if (player == null)
+            player = GameManager.instance != null ? GameManager.instance.playerGameObject?.transform : null;
     }
 
     private void FixedUpdate()

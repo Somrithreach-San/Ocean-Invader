@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro; // Add TMP Support
 using Rhinotap.Toolkit;
 
 public class GuiManager : Singleton<GuiManager>
@@ -42,6 +43,8 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
     
     [SerializeField]
     private Font messageFont;
+    [SerializeField]
+    private TMP_FontAsset messageFontTmp; // TMP Support
 
     [SerializeField]
     private Text ScoreText;
@@ -280,11 +283,19 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
             }
             */
 
-            // Ensure Font is applied
+            // Ensure Font is applied (Legacy Text)
             if (messageFont != null)
             {
                 Text t = obj.GetComponent<Text>();
                 if (t != null) t.font = messageFont;
+            }
+
+            // Ensure Font is applied (TMP)
+            TextMeshProUGUI tmp = obj.GetComponent<TextMeshProUGUI>();
+            if (tmp != null)
+            {
+                 if (messageFontTmp != null) tmp.font = messageFontTmp;
+                 else if (tmp.font == null) tmp.font = TMP_Settings.defaultFontAsset;
             }
             
             floatingTextPool.Enqueue(obj);
@@ -305,6 +316,15 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
                      Text t = obj.GetComponent<Text>();
                      if (t != null) t.font = messageFont;
                 }
+
+                // Re-apply font (TMP)
+                TextMeshProUGUI tmp = obj.GetComponent<TextMeshProUGUI>();
+                if (tmp != null)
+                {
+                     if (messageFontTmp != null) tmp.font = messageFontTmp;
+                     else if (tmp.font == null) tmp.font = TMP_Settings.defaultFontAsset;
+                }
+
                 return obj;
             }
         }
@@ -323,6 +343,14 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
             GameObject objFallback = Instantiate(template, parent);
             objFallback.name = "FloatingXP_Fallback";
             objFallback.SetActive(true);
+
+            // Assign Font (TMP)
+            TextMeshProUGUI tmp = objFallback.GetComponent<TextMeshProUGUI>();
+            if (tmp != null)
+            {
+                 if (messageFontTmp != null) tmp.font = messageFontTmp;
+                 else if (tmp.font == null) tmp.font = TMP_Settings.defaultFontAsset;
+            }
             
             // Add Outline - Removed
             /*
@@ -356,6 +384,7 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
 
         RectTransform rt = obj.GetComponent<RectTransform>();
         Text txt = obj.GetComponent<Text>();
+        TextMeshProUGUI tmp = obj.GetComponent<TextMeshProUGUI>();
 
         // Ensure it's last sibling to be on top
         obj.transform.SetAsLastSibling();
@@ -368,8 +397,25 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
             txt.text = text;
             txt.color = color;
             txt.alignment = TextAnchor.MiddleCenter;
-            txt.fontSize = 15; // Increased to 15 (User Request)
-            txt.fontStyle = FontStyle.Bold; // Bold (User Request)
+            txt.fontSize = 24; // Larger for readability (was 15)
+            txt.fontStyle = FontStyle.Bold; 
+            
+            // Add Shadow for better contrast if missing
+            if (obj.GetComponent<Shadow>() == null)
+            {
+                Shadow s = obj.AddComponent<Shadow>();
+                s.effectColor = new Color(0, 0, 0, 0.5f);
+                s.effectDistance = new Vector2(2, -2);
+            }
+        }
+        
+        if (tmp != null)
+        {
+            tmp.text = text;
+            tmp.color = color;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.fontSize = 24;
+            tmp.fontStyle = FontStyles.Bold;
         }
 
         // Position
@@ -382,19 +428,19 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
         }
         
         // Start Animation
-        StartCoroutine(AnimateFloatingText(obj, rt, txt));
+        StartCoroutine(AnimateFloatingText(obj, rt, txt, tmp));
     }
 
-    private IEnumerator AnimateFloatingText(GameObject obj, RectTransform rt, Text txt)
+    private IEnumerator AnimateFloatingText(GameObject obj, RectTransform rt, Text txt, TextMeshProUGUI tmp)
     {
-        float duration = 1.0f;
+        float duration = 0.8f; // Faster, punchier (was 1.0f)
         float elapsed = 0f;
         
         Vector3 startPos = (rt != null) ? rt.position : Vector3.zero;
         
-        // Arc Logic: Randomize slight left or right drift
-        float driftX = UnityEngine.Random.Range(-20f, 20f); 
-        Vector3 endPos = startPos + Vector3.up * 80f + Vector3.right * driftX;
+        // Drift: Up and slightly random X
+        float driftX = UnityEngine.Random.Range(-30f, 30f); 
+        Vector3 endPos = startPos + Vector3.up * 100f + Vector3.right * driftX;
 
         // Scale Logic
         Vector3 originalScale = Vector3.one;
@@ -402,6 +448,8 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
 
         Color startColor = Color.white;
         if (txt != null) startColor = txt.color;
+        if (tmp != null) startColor = tmp.color;
+        
         Color endColor = new Color(startColor.r, startColor.g, startColor.b, 0f);
 
         while (elapsed < duration)
@@ -411,50 +459,45 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
             elapsed += Time.deltaTime;
             float t = elapsed / duration;
 
-            // 1. Pop In (EaseOutBack)
-            // Scale goes 0 -> 1.2 -> 1.0 quickly in the first 30% of animation
+            // 1. Pop In (Elastic/Back Out)
+            // Scale goes 0 -> 1.5 -> 1.0 quickly
             if (rt != null)
             {
-                float scaleDuration = 0.3f;
+                float scaleDuration = 0.4f;
                 if (t < scaleDuration)
                 {
                     float st = t / scaleDuration;
-                    float scaleVal = EvaluateEaseOutBack(st); 
-                    rt.localScale = originalScale * scaleVal;
+                    // Custom Elastic Pop
+                    float s = Mathf.Sin(st * Mathf.PI * 0.5f); // EaseOutSine
+                    float overshoot = 1.0f + Mathf.Sin(st * Mathf.PI) * 0.5f; // Bump to 1.5
+                    rt.localScale = originalScale * Mathf.Lerp(0f, overshoot, st);
                 }
                 else
                 {
-                    rt.localScale = originalScale;
+                    // Settle back to 1.0
+                    float settleT = (t - scaleDuration) / (1f - scaleDuration);
+                    rt.localScale = Vector3.Lerp(originalScale * 1.2f, originalScale, settleT); 
                 }
             }
 
-            // 2. Position & Arc
+            // 2. Position (EaseOutQuad - Fast then slow)
             if (rt != null)
             {
-                // Linear move
-                Vector3 currentPos = Vector3.Lerp(startPos, endPos, t);
-                // Add Sine Wave arc (Up and Down)
-                // Sin(0) = 0, Sin(PI/2) = 1, Sin(PI) = 0
-                float arcOffset = Mathf.Sin(t * Mathf.PI) * 10f; 
-                currentPos.y += arcOffset;
-                rt.position = currentPos;
+                float moveT = 1f - Mathf.Pow(1f - t, 2f); // EaseOutQuad
+                rt.position = Vector3.Lerp(startPos, endPos, moveT);
             }
 
-            // 3. Fade Out (Gradual, non-linear at the end)
-            if (txt != null)
+            // 3. Fade Out (Last 30%)
+            float fadeStart = 0.7f;
+            Color currentColor = startColor;
+            if (t > fadeStart)
             {
-                float fadeStart = 0.6f;
-                if (t > fadeStart)
-                {
-                    float ft = (t - fadeStart) / (1f - fadeStart);
-                    // Smoothstep or squared for non-linear fade
-                    txt.color = Color.Lerp(startColor, endColor, ft * ft);
-                }
-                else
-                {
-                    txt.color = startColor;
-                }
+                float ft = (t - fadeStart) / (1f - fadeStart);
+                currentColor = Color.Lerp(startColor, endColor, ft);
             }
+            
+            if (txt != null) txt.color = currentColor;
+            if (tmp != null) tmp.color = currentColor;
             
             yield return null;
         }

@@ -40,12 +40,29 @@ public class Fish : MonoBehaviour
     public void Die()
     {
         // Simple death logic
-        Destroy(gameObject);
+        DespawnSelf();
+    }
+    
+    public void DespawnSelf()
+    {
+        if (ObjectPoolManager.Instance != null)
+        {
+            ObjectPoolManager.Instance.Despawn(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
     }
 
     private void OnEnable()
     {
         AllFish.Add(this);
+        
+        // Reset state for pooling
+        school = null;
+        formationOffset = Vector2.zero;
+        // Don't reset 'initialized' as that tracks initialScale which is constant
     }
 
     private void OnDisable()
@@ -150,7 +167,7 @@ public class Fish : MonoBehaviour
             // Reduced distance from 80f to 35f (35*35 = 1225)
             if (distSqr > 1225f) 
             {
-                Destroy(gameObject);
+                DespawnSelf();
                 return;
             }
         }
@@ -234,24 +251,27 @@ public class Fish : MonoBehaviour
 
     public void FlipTowardsDestination(Vector2 _destination, bool localSpace = true)
     {
+        // Add hysteresis buffer to prevent rapid flipping when target is near vertical center
+        float buffer = 0.5f;
+
         if(localSpace)
         {
-            if (_destination.x < transform.localPosition.x)
+            float diff = _destination.x - transform.localPosition.x;
+            if (diff < -buffer)
                 TurnLeft();
-            else if(_destination.x > transform.localPosition.x)
+            else if(diff > buffer)
                 TurnRight();
 
             return;
         }
         else
         {
-            if (_destination.x < transform.position.x)
+            float diff = _destination.x - transform.position.x;
+            if (diff < -buffer)
                 TurnLeft();
-            else if (_destination.x > transform.position.x)
+            else if (diff > buffer)
                 TurnRight();
         }
-
-        
     }
 
 

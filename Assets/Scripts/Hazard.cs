@@ -42,6 +42,8 @@ public class Hazard : MonoBehaviour
     {
         spriteRenderer = GetComponent<SpriteRenderer>();
         audioSource = GetComponent<AudioSource>();
+
+        ConfigureCollider();
     }
 
     private void Start()
@@ -58,6 +60,10 @@ public class Hazard : MonoBehaviour
             audioSource.volume = 0.5f;
             audioSource.spatialBlend = 0f; // 2D sound
         }
+        
+        // Randomize Speeds for realism (desync movement)
+        fallSpeed = Random.Range(2.5f, 4.0f); // Default 3
+        retractSpeed = Random.Range(7.0f, 10.0f); // Default 8
 
         // Play Drop Sound
         PlayMoveSound();
@@ -92,41 +98,12 @@ public class Hazard : MonoBehaviour
         
         // MODIFIED: User provided longer sprites, so we can go deeper.
         // We randomize the target depth significantly now (-13 to 12).
-        // The safety check below will prevent it from detaching from the surface if the sprite is too short.
         targetY = Random.Range(-13f, 12f); 
 
-        // Safety Check: Ensure the top of the line doesn't go below the surface (Prevent "cut off" look)
-        if (spriteRenderer != null)
-        {
-            float halfHeight = spriteRenderer.size.y / 2f;
-            // Increased surfaceY to ensure the top of the line is well above the screen view.
-            // Camera Top is approx 10-12. Surface is 14.5. Let's use 22.0 to be extremely safe.
-            float surfaceY = 22.0f; 
-            float minSafeY = surfaceY - halfHeight;
-            
-            // If targetY is lower than minSafeY (too deep), clamp it.
-            // This ensures we use the full length of the new longer sprites without breaking visuals.
-            if (targetY < minSafeY)
-            {
-                 targetY = minSafeY;
-            }
-
-            // --- VISUAL FIX FOR SPAWN ---
-            // If the sprite is extremely long (e.g. 40 units), spawning at Y=22 (Center) puts Bottom at 2.
-            // This means it would "pop" into view instantly visible in the middle of the screen.
-            // We need to ensure the spawn position (Center) is high enough so the Bottom is > TopOfScreen.
-            
-            float topOfScreen = 15f; 
-            float bottomY = transform.position.y - halfHeight;
-            
-            if (bottomY < topOfScreen)
-            {
-                // Shift Up immediately so it starts off-screen
-                float requiredY = topOfScreen + halfHeight + 2f;
-                transform.position = new Vector3(transform.position.x, requiredY, transform.position.z);
-            }
-        }
-
+        // Safety Check REMOVED: User wants realistic depth variation and will provide longer sprites.
+        // Previously we clamped targetY based on sprite height to avoid "cut off" look at the top.
+        // But this forced short sprites to stay shallow, breaking depth randomization.
+        
         ConfigureCollider();
     }
 
@@ -337,38 +314,35 @@ public class Hazard : MonoBehaviour
     // Safety check for Retract Logic
     private float GetRetractTargetY()
     {
-        // Calculate safe height to ensure full sprite is off-screen
-        float defaultRetractY = 25f; // Safe default
-        
+        float camTop = 15f; // Fallback
+        Camera cam = Camera.main;
+        if (cam != null)
+        {
+             float camHeight = 2f * cam.orthographicSize;
+             camTop = cam.transform.position.y + (camHeight / 2f);
+        }
+
         if (spriteRenderer != null && spriteRenderer.sprite != null)
         {
-             // Bounds Max Y + Buffer
-             // However, transform.position is center.
-             // We want (CenterY - ExtentsY) > TopOfScreen
-             // Or simpler: CenterY > TopOfScreen + ExtentsY
-             
              float halfHeight = spriteRenderer.bounds.extents.y;
-             // Top of screen is approx 12 (Camera Size 10 + 2 buffer)
-             // Let's use 22f (Spawn Y) as base, but ensure we go high enough.
-             
-             // If we spawned at 22, we should return to at least 22.
-             // But if the sprite is HUGE (e.g. 40 units tall), 22 might not be enough to clear the bottom?
-             // Spawn Y 22 means Center is at 22. If height is 40, bottom is at 2. Visible!
-             // So we must retract until Bottom > TopOfScreen.
-             
-             float topOfScreen = 15f; // Safe estimate
-             return topOfScreen + halfHeight + 2f; 
+             return camTop + halfHeight + 2f; 
         }
         
-        return defaultRetractY;
+        return camTop + 5f;
     }
     
-    public void Initialize(AudioClip sound, GameObject particles, Material mat, Texture2D tex)
+    public void Initialize(AudioClip sound, GameObject particles, Material mat, Texture2D tex, float? overrideDepth = null)
     {
         if (moveSound == null) moveSound = sound;
         if (bubbleParticlesPrefab == null) bubbleParticlesPrefab = particles;
         if (bubbleMaterial == null) bubbleMaterial = mat;
         if (bubbleTexture == null) bubbleTexture = tex;
+        
+        if (overrideDepth.HasValue)
+        {
+            targetY = overrideDepth.Value;
+            // Safety Check REMOVED (see Awake)
+        }
     }
 
     private void PlayMoveSound()
@@ -398,8 +372,4 @@ public class Hazard : MonoBehaviour
         }
     }
 
-    private void OnDestroy()
-    {
-        // Cleanup if needed
-    }
 }

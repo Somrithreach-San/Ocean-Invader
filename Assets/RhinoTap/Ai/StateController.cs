@@ -1,4 +1,4 @@
-﻿﻿using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Rhinotap.StateMachine;
@@ -20,9 +20,22 @@ public class StateController : StateControllerBase
 
     //Will move according to this
     private Vector2 currentDirection = Vector2.zero;
+    private State initialState;
+
+    private void OnEnable()
+    {
+        ClearMemory();
+        if (initialState != null)
+        {
+             // Reset to initial state
+             ChangeState(initialState);
+        }
+    }
 
     private void Awake()
     {
+        initialState = _currentState; // Cache the inspector-assigned state
+
         fishController = GetComponent<Fish>();
         if (fishController == null)
             Debug.Log("Fish component missing from an enemy.");

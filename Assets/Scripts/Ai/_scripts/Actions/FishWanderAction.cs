@@ -78,7 +78,7 @@ namespace Rhinotap.StateMachine
             // Cleanup: Destroy if out of bounds (passed the destination or far off screen)
             if (Mathf.Abs(newPos.x) > 45f) 
             {
-                Destroy(Controller.gameObject);
+                Controller.FishController.DespawnSelf();
             }
         }
 
@@ -223,7 +223,7 @@ namespace Rhinotap.StateMachine
             if (Mathf.Abs(newPos.x) > 40f)
             {
                 // Destroy the fish entirely as it has left the screen
-                Destroy(Controller.gameObject);
+                Controller.FishController.DespawnSelf();
             }
         }
 

@@ -221,9 +221,15 @@ public class FishAI : MonoBehaviour
 
         // Flip Y if moving left (with hysteresis) to ensure fish is right-side up
         Vector3 scale = transform.localScale;
-        if (currentDirection.x < -0.1f)
+        
+        // Increase threshold to prevent jitter when moving vertically (Deadzone)
+        // 0.3f corresponds to roughly 72 degrees. 
+        // If swimming steeper than that (near vertical), we don't flip.
+        float flipThreshold = 0.3f; 
+
+        if (currentDirection.x < -flipThreshold)
             scale.y = -Mathf.Abs(scale.y);
-        else if (currentDirection.x > 0.1f)
+        else if (currentDirection.x > flipThreshold)
             scale.y = Mathf.Abs(scale.y);
             
         transform.localScale = scale;
