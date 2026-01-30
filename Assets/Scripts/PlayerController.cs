@@ -16,10 +16,10 @@ public class PlayerController : MonoBehaviour
     private int maxLevel = 6; // Increased to 6 to support Level 6 growth
 
     [SerializeField]
-    private int baseXpRequirement = 100;
+    private int baseXpRequirement = 80;
     [Range(0.05f, 2f)]
     [SerializeField]
-    private float levelXpIncreasePercentage = 0.3f;
+    private float levelXpIncreasePercentage = 0.25f;
 
     [Header("Sounds")]
     [Space(20)]
