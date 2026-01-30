@@ -31,6 +31,7 @@ public class FishAI : MonoBehaviour
     private float leaveTimer = 0f;
     private Vector2 leaveDirection = Vector2.zero;
     private bool isLeaving = false;
+    private float lifeTime = 0f;
 
     [Header("Obstacle Avoidance")]
     public LayerMask obstacleMask;
@@ -54,6 +55,7 @@ public class FishAI : MonoBehaviour
     private Vector2 cachedAvoidanceDir;
     private Vector2 cachedSeparationDir;
     private int aiTickOffset;
+    private float randomOffset; // Small random offset for wobble
 
     // Conflicting script handling
     void Awake()
@@ -118,8 +120,26 @@ public class FishAI : MonoBehaviour
         // SCHOOLING OVERRIDE (If part of a school, and just wandering, follow the school)
         if (fishData != null && fishData.school != null && currentState == State.Wander)
         {
-             Vector2 schoolTarget = fishData.school.CurrentDestination + fishData.formationOffset;
-             targetDir = (schoolTarget - (Vector2)transform.position).normalized;
+             // Add organic drift to the formation so it's not a rigid grid
+             // Using InstanceID as a random seed for unique wobble per fish
+             float wobbleSpeed = 2.0f;
+             float wobbleAmount = 0.5f;
+             float time = Time.fixedTime * wobbleSpeed + GetInstanceID();
+             Vector2 organicDrift = new Vector2(Mathf.Sin(time), Mathf.Cos(time * 0.7f)) * wobbleAmount;
+
+             Vector2 schoolTarget = fishData.school.CurrentDestination + fishData.formationOffset + organicDrift;
+             Vector2 toTarget = schoolTarget - (Vector2)transform.position;
+             
+             // Prevent jitter when very close to target
+             if (toTarget.sqrMagnitude < 0.25f) // 0.5f distance squared
+             {
+                 // Just drift with current direction to avoid snapping
+                 targetDir = currentDirection;
+             }
+             else
+             {
+                 targetDir = toTarget.normalized;
+             }
         }
         // If we are "leaving", override normal behavior unless we are fleeing/chasing intensely
         else if (isLeaving && currentState == State.Wander)
@@ -151,28 +171,34 @@ public class FishAI : MonoBehaviour
         }
 
         // 2. Obstacle Avoidance (Overrides state)
+        // Weighted blending to prevent snapping
         if (cachedAvoidanceDir != Vector2.zero)
         {
-            // Blend heavily towards avoidance
-            targetDir = Vector2.Lerp(targetDir, cachedAvoidanceDir, 0.8f).normalized;
+            // Add avoidance force rather than hard Lerp
+            targetDir += cachedAvoidanceDir * 3.0f; 
         }
 
         // 3. Separation (Nudge away from neighbors)
         if (cachedSeparationDir != Vector2.zero)
         {
-            targetDir = (targetDir + cachedSeparationDir).normalized;
+             targetDir += cachedSeparationDir * 1.5f;
         }
+
+        // Normalize once after all forces are applied
+        targetDir = targetDir.normalized;
 
         // Ensure targetDir is valid
         if (targetDir == Vector2.zero) targetDir = currentDirection;
 
         // 4. Rotate Current Direction towards Target Direction
-        // using RotateTowards for constant angular speed
+        // Use RotateTowards for reliable constant turning, or Slerp with a larger factor
         if (targetDir != Vector2.zero)
         {
-            float step = turnSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime;
-            Vector3 newDir = Vector3.RotateTowards(currentDirection, targetDir, step, 0f);
-            currentDirection = newDir.normalized;
+            // Increase smoothing factor or use RotateTowards to prevent micro-jitter
+            // Original: turnSpeed * 0.05f * Time.fixedDeltaTime (~0.2 factor)
+            // Let's use a slightly more robust interpolation
+            float smoothFactor = 5f * Time.fixedDeltaTime; 
+            currentDirection = Vector3.Slerp(currentDirection, targetDir, smoothFactor).normalized;
         }
         
         // Safety check
@@ -186,25 +212,21 @@ public class FishAI : MonoBehaviour
 
         rb.linearVelocity = currentDirection * currentSpeed;
 
-        // 6. Visual Rotation
-        float angle = Mathf.Atan2(currentDirection.y, currentDirection.x) * Mathf.Rad2Deg;
-        rb.rotation = angle;
+        // 6. Physics Rotation (Smoothed)
+        float targetAngle = Mathf.Atan2(currentDirection.y, currentDirection.x) * Mathf.Rad2Deg;
+        // Smooth rotation using LerpAngle to prevent snapping
+        float rotationSmoothSpeed = 10f; 
+        float smoothedAngle = Mathf.LerpAngle(rb.rotation, targetAngle, rotationSmoothSpeed * Time.fixedDeltaTime);
+        rb.rotation = smoothedAngle;
 
-        if (graphicsTransform != null)
-        {
-            graphicsTransform.rotation = Quaternion.Euler(0, 0, angle);
+        // Flip Y if moving left (with hysteresis) to ensure fish is right-side up
+        Vector3 scale = transform.localScale;
+        if (currentDirection.x < -0.1f)
+            scale.y = -Mathf.Abs(scale.y);
+        else if (currentDirection.x > 0.1f)
+            scale.y = Mathf.Abs(scale.y);
             
-            // Flip Y if moving left (with hysteresis)
-            Vector3 scale = transform.localScale;
-            if (currentDirection.x < -0.1f)
-                scale.y = -Mathf.Abs(scale.y);
-            else if (currentDirection.x > 0.1f)
-                scale.y = Mathf.Abs(scale.y);
-                
-            transform.localScale = scale;
-        }
-
-        ApplyTailSway(currentSpeed);
+        transform.localScale = scale;
     }
 
     void UpdateState()
@@ -226,6 +248,13 @@ public class FishAI : MonoBehaviour
         {
             currentState = State.Flee;
             currentChaseTimer = 0f; // Reset chase timer if fleeing
+
+            // Break Formation!
+            if (fishData.school != null)
+            {
+                fishData.school = null;
+                fishData.formationOffset = Vector2.zero;
+            }
         }
         else if (dist < chaseRadius && playerLevel <= fishData.Level)
         {
@@ -250,6 +279,23 @@ public class FishAI : MonoBehaviour
 
     void HandleLeavingLogic()
     {
+        lifeTime += Time.fixedDeltaTime;
+
+        // Force leave for old predators (High Level)
+        // If they have been around for > 15 seconds, they should leave.
+        // This ensures they don't stick around forever and get stuck.
+        if (fishData != null && GameManager.PlayerLevel < fishData.Level && lifeTime > 15f)
+        {
+             if (!isLeaving) 
+             {
+                 StartLeaving();
+                 leaveTimer = 999f; // Effectively permanent until destroyed
+             }
+             // Ensure they don't stop leaving
+             if (leaveTimer < 100f) leaveTimer = 999f;
+             return; 
+        }
+
         // Only consider leaving if we are just wandering
         if (currentState != State.Wander)
         {
@@ -365,14 +411,9 @@ public class FishAI : MonoBehaviour
         return separationCount > 0 ? separation.normalized : Vector2.zero;
     }
 
-    void ApplyTailSway(float speed)
-    {
-        if (graphicsTransform == null) return;
-
-        float speedFactor = speed / moveSpeed;
-        float swaySpeed = tailSwaySpeed * speedFactor;
-        float wiggle = Mathf.Sin(Time.time * swaySpeed) * tailSwayAmount;
-        
-        graphicsTransform.Rotate(0, 0, wiggle * Time.fixedDeltaTime * 60f);
-    }
+    // Removed: ApplyTailSway is now integrated into FixedUpdate
+    // void ApplyTailSway(float speed)
+    // {
+    //    ...
+    // }
 }

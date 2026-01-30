@@ -1,12 +1,13 @@
 using UnityEngine;
 using System.Collections;
 using UnityEngine.UI;
+using Rhinotap.Toolkit;
 
 public class SharkHazard : MonoBehaviour
 {
     [Header("Shark Settings")]
     [SerializeField]
-    private float moveSpeed = 8f;
+    private float moveSpeed = 12f;
     [SerializeField]
     private float lifeTimeAfterPass = 5.0f;
 
@@ -16,6 +17,8 @@ public class SharkHazard : MonoBehaviour
     [SerializeField]
     private AudioClip attackSound;
     [SerializeField]
+    private AudioClip swimSound; // New Swim Sound
+    [SerializeField]
     private ParticleSystem eatEffect;
     [SerializeField]
     private ParticleSystem trailEffect;
@@ -24,9 +27,13 @@ public class SharkHazard : MonoBehaviour
     [SerializeField]
     private Texture2D bubbleTexture;
 
+    [Header("Visuals")]
+    public Transform graphicsTransform;
+
     // Dependencies
     private GameObject warningIcon; // Kept for reference, but might point to shared icon
     private AudioSource audioSource;
+    private AudioSource swimSource; // Separate source for swimming loop
     
     private int direction = 1; // 1 = Right, -1 = Left
     private bool isCharging = false;
@@ -49,11 +56,44 @@ public class SharkHazard : MonoBehaviour
     private static RectTransform _sharedIconRect;
     private static GameObject _sharedCanvasObj;
 
-    public void Initialize(int dir, GameObject iconPrefab, Sprite iconSprite, AudioClip warnClip, AudioClip atkClip, Material mat = null, Texture2D tex = null)
+    private void Start()
+    {
+        // Listen for Pause
+        EventManager.StartListening<bool>("gamePaused", OnGamePaused);
+    }
+
+    private void OnDestroy()
+    {
+        EventManager.StopListening<bool>("gamePaused", OnGamePaused);
+        
+        // Ensure shared canvas is hidden when shark is destroyed
+        // This handles cases where shark is destroyed during warning phase (e.g. game over/restart)
+        if (_sharedCanvasObj != null && _sharedCanvasObj.activeSelf)
+        {
+            _sharedCanvasObj.SetActive(false);
+        }
+    }
+
+    private void OnGamePaused(bool isPaused)
+    {
+        if (isPaused)
+        {
+            if (audioSource != null) audioSource.Pause();
+            if (swimSource != null) swimSource.Pause();
+        }
+        else
+        {
+            if (audioSource != null) audioSource.UnPause();
+            if (swimSource != null) swimSource.UnPause();
+        }
+    }
+
+    public void Initialize(int dir, GameObject iconPrefab, Sprite iconSprite, AudioClip warnClip, AudioClip atkClip, AudioClip swimClip, Material mat = null, Texture2D tex = null)
     {
         direction = dir;
         warningSound = warnClip;
         attackSound = atkClip;
+        swimSound = swimClip; // Assign swim sound
         bubbleMaterial = mat;
         bubbleTexture = tex;
         
@@ -62,14 +102,30 @@ public class SharkHazard : MonoBehaviour
         if (animator != null)
         {
             animator.enabled = true;
-            // If you have specific triggers, set them here. 
-            // Usually "Idle" or "Swim" is default.
         }
+
+        // Setup Visuals
+        if (graphicsTransform == null)
+            graphicsTransform = transform.Find("SharkGraphics") ?? transform.Find("Gfx") ?? transform;
 
         // Setup Audio
         audioSource = GetComponent<AudioSource>();
         if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
-        audioSource.spatialBlend = 0f;
+        
+        // FIX: Warning sound should be 2D (Global) so it's always heard regardless of shark distance
+        audioSource.spatialBlend = 0.0f; // 2D Sound
+        // audioSource.minDistance = 5.0f;  // Irrelevant for 2D
+        // audioSource.maxDistance = 25.0f; // Irrelevant for 2D
+        audioSource.rolloffMode = AudioRolloffMode.Linear;
+
+        // Setup Swim Source
+        swimSource = gameObject.AddComponent<AudioSource>();
+        swimSource.spatialBlend = 1.0f; // 3D Sound (Swim sound stays 3D)
+        swimSource.minDistance = 5.0f;
+        swimSource.maxDistance = 25.0f;
+        swimSource.rolloffMode = AudioRolloffMode.Linear;
+        swimSource.loop = true;
+        swimSource.volume = 0.6f; // Default volume for ambient swim
         
         // Setup Eat Particles
         // Optimization: Only create if null. The heavy allocation is here.
@@ -195,6 +251,9 @@ public class SharkHazard : MonoBehaviour
             _sharedIconImage.sprite = iconSprite;
         }
 
+        // Capture Spawn Y (Fixed World Y)
+        float spawnY = transform.position.y;
+
         // Size
         _sharedIconRect.sizeDelta = new Vector2(100, 100);
         if (_sharedIconImage.sprite != null)
@@ -211,109 +270,24 @@ public class SharkHazard : MonoBehaviour
             audioSource.Play();
         }
 
-        // START MOVING IMMEDIATELY
-        // The shark spawns far away (-55/55), so we start it moving now.
-        // The warning will persist until it actually reaches the screen.
-        isCharging = true;
-        chargeY = transform.position.y;
+        // WAIT FOR WARNING (4 Seconds)
+        // User Request: Warning should last exactly 4 seconds before shark enters.
+        // During this time, shark is stationary off-screen.
+        isCharging = false;
         
-        // Start Trail
-        if (trailEffect != null)
-        {
-            trailEffect.Play();
-        }
-
-        // Flash Warning UNTIL shark is visible
+        float warningDuration = 4.0f;
         float timer = 0f;
-        float accumulatedTime = 0f;
         
-        bool isOffScreen = true;
-
-        while (isOffScreen)
+        while (timer < warningDuration)
         {
             if (cam == null) break;
 
-            // Check if shark has entered the screen view
-            float camHeight = 2f * cam.orthographicSize;
-            float camWidth = camHeight * cam.aspect;
-            float halfWidth = camWidth / 2f;
-            
-            // Add a small buffer (e.g. 2 units) so the warning disappears JUST as it enters
-            // We calculate distance covered in 1 second (speed * 1s) and add it to the threshold to dismiss early.
-            float earlyDismissBuffer = moveSpeed * 1.0f;
-            float distX = Mathf.Abs(transform.position.x - cam.transform.position.x);
-            
-            if (distX < (halfWidth + 2f + earlyDismissBuffer))
-            {
-                isOffScreen = false;
-            }
-
             timer += Time.deltaTime;
             
-            // ... (Rest of UI logic)
-            
-            // Update Y position
-            if (cam != null && _sharedCanvas != null)
-            {
-                RectTransform canvasRect = _sharedCanvas.GetComponent<RectTransform>();
-                float canvasWidth = canvasRect.rect.width;
-                float canvasHeight = canvasRect.rect.height;
-                float iconWidth = _sharedIconRect.rect.width;
-
-                // Position Logic in Canvas Space
-                // User Request: "literally almost touch the screen border"
-                // 40f was too close (clipped), 45f was too far. 
-                // Reduced percentage to prevent large gaps on tablets.
-                float screenPadding = Mathf.Max(42f, canvasWidth * 0.02f);
-                
-                // Calculate X based on direction
-                // direction > 0 (Moving Right) -> Comes from Left -> Show on Left Edge
-                // direction < 0 (Moving Left) -> Comes from Right -> Show on Right Edge
-                
-                float targetX = 0f;
-                if (direction > 0)
-                {
-                    // Left Edge
-                    targetX = -(canvasWidth / 2f) + (iconWidth / 2f) + screenPadding;
-                }
-                else
-                {
-                    // Right Edge
-                    targetX = (canvasWidth / 2f) - (iconWidth / 2f) - screenPadding;
-                }
-                
-                // Calculate Y
-                // WorldToScreenPoint gives pixels (0 to Screen.width).
-                // We need to convert this to Canvas Space.
-                Vector3 screenPos = cam.WorldToScreenPoint(transform.position);
-                
-                // Normalized Y (0 to 1)
-                float normalizedY = screenPos.y / Screen.height;
-                
-                // Map to Canvas Height (-Height/2 to Height/2)
-                float targetY = (normalizedY - 0.5f) * canvasHeight;
-                
-                // Clamp Icon to Screen Height (with padding) so player knows shark is above/below
-                float yLimit = (canvasHeight / 2f) - (_sharedIconRect.rect.height / 2f) - 20f;
-                targetY = Mathf.Clamp(targetY, -yLimit, yLimit);
-
-                _sharedIconRect.anchoredPosition = new Vector2(targetX, targetY);
-            }
-
-            // Blink & Pulse effect
+            // Pulse Alpha
+            float alpha = Mathf.Abs(Mathf.Sin(timer * 5f)); // Fast flash
             if (_sharedIconImage != null)
             {
-                // Pulse based on proximity (closer = faster)
-                // Normalize distance (55 max, 10 min)
-                float distFactor = Mathf.Clamp01(1f - (distX / 60f)); 
-                float frequency = Mathf.Lerp(4f, 20f, distFactor);
-                
-                accumulatedTime += Time.deltaTime * frequency;
-
-                float alpha = Mathf.PingPong(accumulatedTime, 1f);
-                // Min alpha 0.2 to never fully disappear
-                alpha = Mathf.Lerp(0.2f, 1f, alpha);
-                
                 Color col = _sharedIconImage.color;
                 col.a = alpha;
                 _sharedIconImage.color = col;
@@ -322,16 +296,91 @@ public class SharkHazard : MonoBehaviour
                 float scale = Mathf.Lerp(1f, 1.3f, alpha);
                 _sharedIconRect.localScale = Vector3.one * scale;
             }
+            
+            // Update Icon Position (in case camera moves or screen resizes)
+            if (_sharedCanvas != null)
+            {
+                RectTransform canvasRect = _sharedCanvas.GetComponent<RectTransform>();
+                float canvasWidth = canvasRect.rect.width;
+                float iconWidth = _sharedIconRect.rect.width;
+                float screenPadding = Mathf.Max(42f, canvasWidth * 0.02f);
+                
+                float targetX = 0f;
+                if (direction > 0) // Coming from Left
+                    targetX = -(canvasWidth / 2f) + (iconWidth / 2f) + screenPadding;
+                else // Coming from Right
+                    targetX = (canvasWidth / 2f) - (iconWidth / 2f) - screenPadding;
+                    
+                // Vertical Alignment (Match Shark Spawn Y)
+                // Convert World Y to Screen Y
+                float targetY = 0f;
+                if (cam != null)
+                {
+                    Vector3 worldPos = new Vector3(0, spawnY, 0);
+                    Vector3 screenPos = cam.WorldToScreenPoint(worldPos);
+                    
+                    // Convert Screen Point to Canvas Local Point
+                    Vector2 localPoint;
+                    if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                        canvasRect, 
+                        screenPos, 
+                        null, // ScreenSpaceOverlay uses null camera
+                        out localPoint))
+                    {
+                        targetY = localPoint.y;
+                    }
+
+                    // CLAMP to Screen Bounds (User Request: "visible to player always")
+                    // Ensure icon doesn't go off-screen if player moves away from spawn Y
+                    float halfHeight = canvasRect.rect.height / 2f;
+                    float iconHalfHeight = _sharedIconRect.rect.height / 2f;
+                    float verticalPadding = Mathf.Max(iconHalfHeight, 20f); // Margin from edge
+                    
+                    float clampLimit = halfHeight - verticalPadding;
+                    targetY = Mathf.Clamp(targetY, -clampLimit, clampLimit);
+                }
+
+                _sharedIconRect.anchoredPosition = new Vector2(targetX, targetY);
+            }
+
             yield return null;
         }
         
-        // Cleanup Warning (Hide instead of Destroy)
-        _sharedCanvasObj.SetActive(false);
-
-        // Stop Warning Sound
+        // WARNING DONE -> ATTACK!
+        
+        // 1. Cleanup Warning
+        if (_sharedCanvasObj != null) _sharedCanvasObj.SetActive(false);
         if (audioSource != null && audioSource.isPlaying && audioSource.clip == warningSound)
         {
             audioSource.Stop();
+        }
+
+        // 2. Teleport Shark to "Just Outside Screen" to ensure immediate entry
+        if (cam != null)
+        {
+            float camHeight = 2f * cam.orthographicSize;
+            float camWidth = camHeight * cam.aspect;
+            float halfWidth = camWidth / 2f;
+            
+            // Buffer to spawn just outside
+            float entryBuffer = 2.0f; 
+            float entryX = (direction > 0) ? -(halfWidth + entryBuffer) : (halfWidth + entryBuffer);
+            
+            // Add Camera X in case it moved
+            entryX += cam.transform.position.x;
+            
+            // Fix: Use spawnY (World Y) instead of chargeY (which might be 0)
+            transform.position = new Vector3(entryX, spawnY, 0f);
+        }
+
+        // 3. Start Moving
+        StartCharging();
+        
+        // Play Swim Sound Loop
+        if (swimSource != null && swimSound != null)
+        {
+            swimSource.clip = swimSound;
+            swimSource.Play();
         }
 
         // Play Attack Sound (Now that it's here!)
@@ -408,22 +457,73 @@ public class SharkHazard : MonoBehaviour
         trailEffect = bubbles.AddComponent<ParticleSystem>();
         var renderer = bubbles.GetComponent<ParticleSystemRenderer>();
 
-        // Settings
+        // --- REALISTIC BUBBLE SETTINGS ---
         var main = trailEffect.main;
         main.loop = true;
         main.playOnAwake = false;
         main.simulationSpace = ParticleSystemSimulationSpace.World;
-        main.startSpeed = 0f;
-        main.startLifetime = 0.4f; // Reduced lifetime for a tighter trail
-        main.startSize = new ParticleSystem.MinMaxCurve(0.1f, 0.3f);
-        main.gravityModifier = -0.05f;
-        
-        var emission = trailEffect.emission;
-        emission.rateOverTime = 8f; // Reduced emission for less bubbles
+        // Faster bubbles for a fast shark
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.5f, 2.0f); 
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.2f);
+        // Varied sizes
+        main.startSize = new ParticleSystem.MinMaxCurve(0.1f, 0.4f);
+        // Bubbles float up
+        main.gravityModifier = -0.1f;
+        // Random rotation for realism
+        main.startRotation = new ParticleSystem.MinMaxCurve(0f, 360f);
 
+        // Emission: High rate for a "trail"
+        var emission = trailEffect.emission;
+        emission.rateOverTime = 30f; // Increased from 8f
+
+        // Shape: Cone emitting backwards
         var shape = trailEffect.shape;
-        shape.shapeType = ParticleSystemShapeType.Circle;
+        shape.shapeType = ParticleSystemShapeType.Cone;
+        shape.angle = 20f;
         shape.radius = 0.3f;
+        // Rotate so cone faces backwards relative to shark (assuming Shark faces Right+)
+        // If Shark faces Right (X+), Back is (X-).
+        // Default Cone emits along Z. We need to rotate it to emit along -X.
+        // Rotation: Y = -90 (Points Left)
+        shape.rotation = new Vector3(0f, -90f, 0f);
+
+        // Velocity over Lifetime: Add turbulence
+        var vel = trailEffect.velocityOverLifetime;
+        vel.enabled = true;
+        // FIX: Ensure all curves use the same mode (Constant, Curve, RandomBetweenTwoConstants, etc.)
+        // When setting individual axes (x, y, z), if one uses RandomBetweenTwoConstants, others must too.
+        // Or we can just set them all to be "Random Between Two Constants".
+        
+        vel.x = new ParticleSystem.MinMaxCurve(-1f, 0f); // Random Between Constants
+        vel.y = new ParticleSystem.MinMaxCurve(0.5f, 2f); // Random Between Constants
+        vel.z = new ParticleSystem.MinMaxCurve(0f, 0f);   // Explicitly set Z to match mode!
+        vel.space = ParticleSystemSimulationSpace.World;
+
+        // Size over Lifetime: Bubbles shrink or pop? Or grow?
+        // Usually bubbles grow slightly as pressure decreases, then pop.
+        var sol = trailEffect.sizeOverLifetime;
+        sol.enabled = true;
+        AnimationCurve curve = new AnimationCurve();
+        curve.AddKey(0.0f, 0.5f); // Start small
+        curve.AddKey(0.8f, 1.0f); // Grow
+        curve.AddKey(1.0f, 0.0f); // Pop
+        sol.size = new ParticleSystem.MinMaxCurve(1f, curve);
+
+        // Noise: Wiggle
+        var noise = trailEffect.noise;
+        noise.enabled = true;
+        noise.strength = 0.2f;
+        noise.frequency = 1f;
+
+        // Color/Alpha: Fade out
+        var col = trailEffect.colorOverLifetime;
+        col.enabled = true;
+        Gradient grad = new Gradient();
+        grad.SetKeys(
+            new GradientColorKey[] { new GradientColorKey(Color.white, 0.0f), new GradientColorKey(Color.white, 1.0f) },
+            new GradientAlphaKey[] { new GradientAlphaKey(0.6f, 0.0f), new GradientAlphaKey(0.4f, 0.7f), new GradientAlphaKey(0.0f, 1.0f) }
+        );
+        col.color = grad;
 
         // Reuse material logic
         if (bubbleMaterial != null)
@@ -539,16 +639,6 @@ public class SharkHazard : MonoBehaviour
         {
             int count = Random.Range(2, 4);
             eatEffect.Emit(count);
-        }
-    }
-
-    private void OnDestroy()
-    {
-        // Ensure shared canvas is hidden when shark is destroyed
-        // This handles cases where shark is destroyed during warning phase (e.g. game over/restart)
-        if (_sharedCanvasObj != null && _sharedCanvasObj.activeSelf)
-        {
-            _sharedCanvasObj.SetActive(false);
         }
     }
 }

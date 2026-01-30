@@ -72,7 +72,7 @@ public class GameManager : MonoBehaviour
     public static int PlayerLevel { 
         get
         {
-            if (instance.player != null)
+            if (instance != null && instance.player != null)
                 return instance.player.Level;
             else
                 return 0;

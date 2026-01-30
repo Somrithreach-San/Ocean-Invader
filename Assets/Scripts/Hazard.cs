@@ -5,6 +5,8 @@ public class Hazard : MonoBehaviour
     [SerializeField]
     private float fallSpeed = 3f;
     [SerializeField]
+    private float retractSpeed = 8f; // Faster speed for pulling up
+    [SerializeField]
     private float roamSpeed = 1.5f;
     [SerializeField]
     private float minRoamTime = 6.0f; // Increased roam time (User request: roam longer)
@@ -236,7 +238,7 @@ public class Hazard : MonoBehaviour
         else if (currentState == State.Retracting)
         {
             // Move up (Retract)
-            transform.Translate(Vector3.up * fallSpeed * Time.deltaTime, Space.World); // Same speed as fall
+            transform.Translate(Vector3.up * retractSpeed * Time.deltaTime, Space.World); 
             
             // Destroy if fully off screen top (Fixed World Position)
             // Use dynamic calculation to ensure full sprite clearance

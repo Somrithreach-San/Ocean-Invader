@@ -32,7 +32,7 @@ public class MobileJoystick : MonoBehaviour, IDragHandler, IPointerUpHandler, IP
         // Determine if we should show or hide
         bool shouldShow = false;
 
-        if (Application.isMobilePlatform || SystemInfo.deviceType == DeviceType.Handheld)
+        if (Application.isMobilePlatform || SystemInfo.deviceType == DeviceType.Handheld || Input.touchSupported)
         {
             shouldShow = true;
         }
@@ -42,8 +42,10 @@ public class MobileJoystick : MonoBehaviour, IDragHandler, IPointerUpHandler, IP
             #if UNITY_EDITOR
             // Check if Loader is forcing simulation
             MobileInputLoader loader = Object.FindFirstObjectByType<MobileInputLoader>();
-            if (loader != null && loader.simulateMobileInEditor)
+            if (loader != null)
             {
+                // If a Loader exists, we assume it manages our existence (or we are debugging).
+                // This ensures visibility in Simulator where Input.touchSupported can be flaky.
                 shouldShow = true;
             }
             #endif

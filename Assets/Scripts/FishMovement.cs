@@ -117,7 +117,10 @@ public class FishMovement : MonoBehaviour
 
         if (graphicsTransform != null)
         {
-            graphicsTransform.rotation = Quaternion.Euler(0, 0, angle);
+            float swaySpeed = tailSwaySpeed * (currentSpeed / moveSpeed);
+            float wiggle = Mathf.Sin(Time.fixedTime * swaySpeed) * tailSwayAmount;
+
+            graphicsTransform.rotation = Quaternion.Euler(0, 0, angle + wiggle);
             
             Vector3 scale = transform.localScale;
             if (currentDirection.x < -0.1f) scale.y = -Mathf.Abs(scale.y);
@@ -125,7 +128,7 @@ public class FishMovement : MonoBehaviour
             transform.localScale = scale;
         }
 
-        ApplyTailSway(currentSpeed);
+        // ApplyTailSway(currentSpeed); // Removed
     }
 
     Vector2 GetWanderDirection()
@@ -158,11 +161,8 @@ public class FishMovement : MonoBehaviour
         return Vector2.zero;
     }
 
-    void ApplyTailSway(float speed)
-    {
-        if (graphicsTransform == null) return;
-        float swaySpeed = tailSwaySpeed * (speed / moveSpeed);
-        float wiggle = Mathf.Sin(Time.time * swaySpeed) * tailSwayAmount;
-        graphicsTransform.Rotate(0, 0, wiggle * Time.fixedDeltaTime * 60f);
-    }
+    // void ApplyTailSway(float speed)
+    // {
+    //    ...
+    // }
 }

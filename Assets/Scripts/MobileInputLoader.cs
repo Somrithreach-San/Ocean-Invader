@@ -22,6 +22,12 @@ public class MobileInputLoader : MonoBehaviour
         {
             isMobile = true;
         }
+
+        // Check for Touch Support (Handles Simulator & Touch Laptops)
+        if (Input.touchSupported)
+        {
+            isMobile = true;
+        }
         
         // Extended check for Editor/Simulator
         #if UNITY_EDITOR
@@ -31,6 +37,14 @@ public class MobileInputLoader : MonoBehaviour
         
         if (isMobile)
         {
+            // Ensure EventSystem exists (Critical for Mobile UI Input)
+            if (UnityEngine.EventSystems.EventSystem.current == null)
+            {
+                GameObject eventSystem = new GameObject("EventSystem");
+                eventSystem.AddComponent<UnityEngine.EventSystems.EventSystem>();
+                eventSystem.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+            }
+
             // Fallback: Load from Resources if prefab is missing
             if (mobileInputPrefab == null)
             {

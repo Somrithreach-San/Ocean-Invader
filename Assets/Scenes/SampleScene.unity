@@ -189,7 +189,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: 100
+  m_Text: 
 --- !u!222 &10042792
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -292,7 +292,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 21.1479, y: 5.925}
+  m_SizeDelta: {x: 19.4777, y: 5.45707}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &136112635
 MonoBehaviour:
@@ -770,7 +770,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 21.1479, y: 5.925}
+  m_SizeDelta: {x: 32.7429, y: 9.17362}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &413209142
 MonoBehaviour:
@@ -1068,14 +1068,18 @@ MonoBehaviour:
   completedColor: {r: 1, g: 1, b: 1, a: 1}
   currentColor: {r: 1, g: 1, b: 1, a: 1}
   lockedColor: {r: 0, g: 0, b: 0, a: 0.5}
+  warningIconSprite: {fileID: 21300000, guid: 9af516e639169494f8197c3f340fbbeb, type: 3}
   pauseBtn: {fileID: 2089831434}
   resumeBtn: {fileID: 773797392}
   pausedBg: {fileID: 350203011}
-  ScoreScreen: {fileID: 1172434020}
+  ScoreScreen: {fileID: 0}
   victoryMessage: "GbGrsaTr G\xF1k)anrYcCIvitk\xF1\xFAgvK\xC1enH"
   defeatMessage: "B\xFCayamm\xFEgeTot"
   messageFont: {fileID: 0}
   ScoreText: {fileID: 10042791}
+  floatingTextPrefab: {fileID: 7447932585375443293, guid: a22353b65bbe5514b9a720e3b79c5e20,
+    type: 3}
+  poolSize: 20
 --- !u!114 &549443012
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1126,7 +1130,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 21.1479, y: 5.925}
+  m_SizeDelta: {x: 18.0012, y: 6.262}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &577501915
 MonoBehaviour:
@@ -1201,7 +1205,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 21.1479, y: 5.925}
+  m_SizeDelta: {x: 29.9863, y: 8.40126}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &650679744
 MonoBehaviour:
@@ -1735,7 +1739,7 @@ MonoBehaviour:
   player: {fileID: 0}
   isActive: 1
   maxFishCount: 15
-  spawnInterval: 1.5
+  spawnInterval: 2
   hazardPrefab: {fileID: 0}
   hazardSprite: {fileID: 21300000, guid: 97183990a7d0bd84ebfd9255697ca8fb, type: 3}
   hazardSpriteVariant: {fileID: 21300000, guid: 51079652293c7664cb2c2a34c78b84c7,
@@ -1751,7 +1755,8 @@ MonoBehaviour:
   warningIconSprite: {fileID: 21300000, guid: 9af516e639169494f8197c3f340fbbeb, type: 3}
   sharkChance: 0.05
   sharkWarningSound: {fileID: 8300000, guid: b43f9803f9c5df3479d89fccff0cafa8, type: 3}
-  sharkAttackSound: {fileID: 0}
+  sharkAttackSound: {fileID: 8300000, guid: be73fcbfce4137045891834d16ee1628, type: 3}
+  sharkSwimSound: {fileID: 8300000, guid: 126fdadfde0688f46b75a6794b4e4509, type: 3}
 --- !u!4 &833026716
 Transform:
   m_ObjectHideFlags: 0
@@ -1932,7 +1937,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0.099975586, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1172434022
@@ -7870,8 +7875,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -0.4, y: 15.1}
-  m_SizeDelta: {x: 188.4173, y: 10.921}
+  m_AnchoredPosition: {x: -0.87407, y: 15.1}
+  m_SizeDelta: {x: 201.07, y: 10.921}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1977382675
 MonoBehaviour:
@@ -7934,7 +7939,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 21.1479, y: 5.925}
+  m_SizeDelta: {x: 20.6007, y: 6.73692}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2059102626
 MonoBehaviour:

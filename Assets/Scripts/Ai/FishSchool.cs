@@ -31,23 +31,27 @@ public class FishSchool : MonoBehaviour
 
     private void PickNewDestination()
     {
-        // Small chance to turn around (Group Turn)
-        if (Random.value < 0.1f) 
-        {
-            movingRight = !movingRight;
-        }
-
-        // Target X is towards the edge we are moving to
-        // We set it far out so they keep swimming
-        float targetX = movingRight ? maxX + 10f : minX - 10f;
-
-        // Random Y within bounds
+        // NATURAL MOVEMENT:
+        // Instead of swimming straight to the edge, pick a random point within the arena
+        // This creates a "wandering" school effect.
+        
+        float targetX = Random.Range(minX, maxX);
         float targetY = Random.Range(minY, maxY);
+        
+        // Add some bias to keep moving in the general direction (Left or Right) initially
+        // but allow turning back.
+        if (Random.value < 0.7f) // 70% chance to continue in current "flow"
+        {
+             if (movingRight) targetX = Random.Range(0f, maxX);
+             else targetX = Random.Range(minX, 0f);
+        }
 
         CurrentDestination = new Vector2(targetX, targetY);
 
-        // Re-evaluate in 2-4 seconds
-        // This allows them to change Y or turn back occasionally
-        decisionTimer = Random.Range(2f, 4f);
+        // Update direction based on new target (for logic use, though FishAI handles rotation)
+        movingRight = (targetX > transform.position.x);
+
+        // Re-evaluate frequently (3-6 seconds) to change course
+        decisionTimer = Random.Range(3f, 6f);
     }
 }

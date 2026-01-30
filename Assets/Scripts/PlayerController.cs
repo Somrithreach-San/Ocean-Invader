@@ -109,7 +109,9 @@ public class PlayerController : MonoBehaviour
     private Vector2 _moveInput; // Raw input direction * speed factor
     private Vector2 _smoothVelocity; // For SmoothDamp
     [Header("Movement Polish")]
-    [SerializeField] private float smoothTime = 0.05f; // User requested snappy movement (was 0.15f)
+    [SerializeField] private float smoothTime = 0.03f; // Reduced for snappier response (was 0.05f)
+    [SerializeField] private float tiltAngle = 20f; // Max tilt angle in degrees
+    [SerializeField] private float tiltSpeed = 10f; // How fast we tilt
     #endregion
 
     #region Mono Behaviour
@@ -242,6 +244,9 @@ public class PlayerController : MonoBehaviour
             CreateBubbleParticles();
         }
         
+        // Refresh settings based on current size
+        UpdateBubbleParticles();
+
         if (speedEffect != null && !speedEffect.isPlaying)
         {
             speedEffect.Play();
@@ -256,30 +261,82 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    private void UpdateBubbleParticles()
+    {
+        if (speedEffect == null) return;
+
+        float scale = currentBaseScale;
+
+        // Position: Behind the player
+        // Assuming player faces Right (X+), tail is at -X.
+        // Scale offset by player size.
+        // Adjusted offset to be slightly behind center
+        speedEffect.transform.localPosition = new Vector3(-0.8f * scale, -0.1f * scale, 0f);
+
+        var main = speedEffect.main;
+        // Scale start size with player
+        main.startSize = new ParticleSystem.MinMaxCurve(0.1f * scale, 0.3f * scale);
+        // Faster bubbles for bigger/faster player? Or constant?
+        // Let's scale speed slightly
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.5f * scale, 2.0f * scale); 
+
+        var emission = speedEffect.emission;
+        // More bubbles for bigger player?
+        emission.rateOverTime = 20f * scale; 
+
+        var shape = speedEffect.shape;
+        shape.radius = 0.2f * scale;
+    }
+
     private void CreateBubbleParticles()
     {
         GameObject bubbles = new GameObject("SpeedBubbles");
         bubbles.transform.SetParent(transform, false);
-        bubbles.transform.localPosition = Vector3.zero; 
-
+        
         speedEffect = bubbles.AddComponent<ParticleSystem>();
         
-        // Configure Particle System for Bubbles
+        // Configure Particle System for Bubbles (Realistic Style adapted from Shark)
         var main = speedEffect.main;
         main.loop = true;
         main.playOnAwake = false;
-        main.simulationSpace = ParticleSystemSimulationSpace.World; // Leave a trail
-        main.startSize = 0.15f; // Smaller bubbles
-        main.startLifetime = 0.8f;
-        main.startSpeed = 0f; // Don't shoot out, just spawn and stay (relative to world)
-        main.gravityModifier = -0.2f; // Float up slightly
-
-        var emission = speedEffect.emission;
-        emission.rateOverTime = 8f; // Less particles
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.0f);
+        main.gravityModifier = -0.1f; // Float up
+        main.startRotation = new ParticleSystem.MinMaxCurve(0f, 360f);
 
         var shape = speedEffect.shape;
-        shape.shapeType = ParticleSystemShapeType.Circle;
-        shape.radius = 0.2f;
+        shape.shapeType = ParticleSystemShapeType.Cone;
+        shape.angle = 20f;
+        // Rotate to emit backwards (assuming Right-facing sprite)
+        shape.rotation = new Vector3(0f, -90f, 0f);
+
+        // Velocity over Lifetime: Add turbulence
+        var vel = speedEffect.velocityOverLifetime;
+        vel.enabled = true;
+        vel.x = new ParticleSystem.MinMaxCurve(-1f, 0f);
+        vel.y = new ParticleSystem.MinMaxCurve(0.5f, 2f);
+        vel.z = new ParticleSystem.MinMaxCurve(0f, 0f);
+        vel.space = ParticleSystemSimulationSpace.World;
+
+        // Size over Lifetime: Grow then pop
+        var sol = speedEffect.sizeOverLifetime;
+        sol.enabled = true;
+        AnimationCurve curve = new AnimationCurve();
+        curve.AddKey(0.0f, 0.5f); 
+        curve.AddKey(0.8f, 1.0f); 
+        curve.AddKey(1.0f, 0.0f); 
+        sol.size = new ParticleSystem.MinMaxCurve(1f, curve);
+
+        // Color/Alpha: Fade out
+        var col = speedEffect.colorOverLifetime;
+        col.enabled = true;
+        Gradient grad = new Gradient();
+        grad.SetKeys(
+            new GradientColorKey[] { new GradientColorKey(Color.white, 0.0f), new GradientColorKey(Color.white, 1.0f) },
+            new GradientAlphaKey[] { new GradientAlphaKey(0.6f, 0.0f), new GradientAlphaKey(0.4f, 0.7f), new GradientAlphaKey(0.0f, 1.0f) }
+        );
+        col.color = grad;
 
         // Assign Material
         var renderer = bubbles.GetComponent<ParticleSystemRenderer>();
@@ -291,7 +348,6 @@ public class PlayerController : MonoBehaviour
         else if (bubbleTexture != null)
         {
             // Create a temporary material at runtime using the texture
-            // Try standard particle shaders
             Shader shader = Shader.Find("Particles/Standard Unlit");
             if (shader == null) shader = Shader.Find("Mobile/Particles/Alpha Blended");
             if (shader == null) shader = Shader.Find("Sprites/Default");
@@ -429,7 +485,10 @@ public class PlayerController : MonoBehaviour
         float speedFactor = 0f;
         bool hasInput = false;
         bool boostInput = false;
-        bool isMobile = Application.isMobilePlatform || UnityEngine.Device.SystemInfo.deviceType == DeviceType.Handheld;
+        // Robust Mobile Check (Matches MobileInputLoader)
+        bool isMobile = Application.isMobilePlatform || 
+                       UnityEngine.Device.SystemInfo.deviceType == DeviceType.Handheld || 
+                       Input.touchSupported;
 
         // 0. Mobile Joystick (New)
         if (MobileJoystick.Instance != null && MobileJoystick.Instance.InputDirection != Vector2.zero)
@@ -489,19 +548,19 @@ public class PlayerController : MonoBehaviour
         // 4. Visuals: Flip Left/Right & Tilt (Based on Physics Velocity)
         if (rb.linearVelocity.magnitude > 0.1f)
         {
-            // Flip: Based on X direction relative to screen
-            // If moving Left (negative X), face Left.
-            float directionSign = Mathf.Sign(rb.linearVelocity.x);
-            
-            // Apply scale (maintaining current size, just flipping X)
-            // Note: We assume the sprite faces Right by default.
-            
-            // Calculate final scale
-            float finalScale = currentBaseScale;
-            Vector3 newScale = new Vector3(finalScale, finalScale, 1f);
-            
-            newScale.x = directionSign * finalScale; // Keep Magnitude, Flip Sign
-            transform.localScale = newScale;
+            // Flip: Only update facing direction if we have significant X movement
+            // This prevents flipping when moving purely vertically (fixes jitter)
+            if (Mathf.Abs(rb.linearVelocity.x) > 0.1f)
+            {
+                float directionSign = Mathf.Sign(rb.linearVelocity.x);
+                
+                // Calculate final scale
+                float finalScale = currentBaseScale;
+                Vector3 newScale = new Vector3(finalScale, finalScale, 1f);
+                
+                newScale.x = directionSign * finalScale; // Keep Magnitude, Flip Sign
+                transform.localScale = newScale;
+            }
 
             // Lock Rotation (No upside down) if we have a separate graphics object
             if (playerGraphics != transform)
@@ -509,10 +568,28 @@ public class PlayerController : MonoBehaviour
                 transform.rotation = Quaternion.identity;
             }
             
-            // Ensure no local rotation (Tilt removed)
+            // Apply Tilt to Graphics ("Feeding Frenzy" Style)
             if (playerGraphics != null)
             {
-                playerGraphics.localRotation = Quaternion.identity;
+                // Calculate target tilt based on Y velocity
+                // Tilt Up if moving Up, Down if moving Down
+                float yVel = rb.linearVelocity.y;
+                float targetTilt = Mathf.Clamp(yVel * 3f, -tiltAngle, tiltAngle); // *3 multiplier for responsiveness
+                
+                float currentZ = playerGraphics.localEulerAngles.z;
+                float newZ = Mathf.LerpAngle(currentZ, targetTilt, tiltSpeed * Time.deltaTime);
+                
+                playerGraphics.localRotation = Quaternion.Euler(0, 0, newZ);
+            }
+        }
+        else
+        {
+            // Reset tilt when stopped
+            if (playerGraphics != null)
+            {
+                float currentZ = playerGraphics.localEulerAngles.z;
+                float newZ = Mathf.LerpAngle(currentZ, 0f, tiltSpeed * Time.deltaTime);
+                playerGraphics.localRotation = Quaternion.Euler(0, 0, newZ);
             }
         }
 
@@ -748,6 +825,10 @@ public class PlayerController : MonoBehaviour
         score += (fish.Xp * Level);
 
         GuiManager.instance.SetXp(currentXp, currentLevelXp, Level, maxLevel);
+        
+        // Show Floating XP Text
+        // Updated to Khmer format: "÷10 BinÞú" (where ÷ is + in that font)
+        GuiManager.instance.ShowFloatingText(fish.transform.position, "÷" + fish.Xp + " BinÞú", Color.white);
 
     }
 
@@ -773,8 +854,9 @@ public class PlayerController : MonoBehaviour
                  // Disable further level ups or inputs if needed
                  // isAlive = false; // Optional: Stop player from moving? 
                  // User asked to "end the game by restart", usually means game over state.
-                 // Let's stop the player from controlling to indicate "Done".
-                 isAlive = false;
+                 // UPDATE: User asked "the player fish when mixed out level or completed the xp bar should be still not in 1 place"
+                 // Meaning: The player should NOT be stuck/frozen. We allow movement.
+                 // isAlive = false; // DISABLED to allow movement after win
                  
                  // Trigger Game Over event so UI knows?
                  EventManager.Trigger("GameWin"); // Trigger Win Message

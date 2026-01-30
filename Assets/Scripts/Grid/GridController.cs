@@ -25,7 +25,7 @@ public class GridController : MonoBehaviour
     [SerializeField]
     private int maxFishCount = 20; // Increased limit to allow more fish density
     [SerializeField]
-    private float spawnInterval = 2.0f; // Spawning happens faster (was 5f) to replenish eatable fish
+    private float spawnInterval = 1.5f; // Spawning happens faster (was 5f -> 2f) to replenish eatable fish
     private float spawnTimer = 0f;
 
     [Header("Hazard Settings")]
@@ -64,6 +64,8 @@ public class GridController : MonoBehaviour
     private AudioClip sharkWarningSound;
     [SerializeField]
     private AudioClip sharkAttackSound;
+    [SerializeField]
+    private AudioClip sharkSwimSound; // New Swim Sound
     
     // Track active shark
     private GameObject activeShark;
@@ -92,6 +94,12 @@ public class GridController : MonoBehaviour
 
     private void Start()
     {
+        // Migration: Update spawnInterval to new faster default if it's still at the old default
+        if (Mathf.Abs(spawnInterval - 2.0f) < 0.01f)
+        {
+             spawnInterval = 1.5f;
+        }
+
         // Ensure hazard chance is reasonable
     }
 
@@ -108,6 +116,14 @@ public class GridController : MonoBehaviour
     {
         if (enemyLibrary == null) return;
 
+        // Periodic Cleanup (Every 60 frames / ~1s) to remove far-off fish
+        // This ensures high-level fish that leave the screen are eventually destroyed
+        // even if the population limit hasn't been reached.
+        if (Time.frameCount % 60 == 0)
+        {
+             CullObsoleteFish(GameManager.PlayerLevel);
+        }
+
         spawnTimer += Time.deltaTime;
         if (spawnTimer >= spawnInterval)
         {
@@ -115,7 +131,17 @@ public class GridController : MonoBehaviour
 
             // 1. Hazard Spawn Check (Priority over Fish)
             // Allowed to spawn even if Fish count is maxed out
-            if (activeHazard == null && Random.value < hazardChance)
+            // User Request: "More frequent both of it" -> Boosted chances
+            // User Request: "increase the chanes of the hazrd hook more"
+            float effectiveHazardChance = Mathf.Max(hazardChance, 0.5f); // Increased from 0.4f
+            
+            // Further boost for low levels since they don't have sharks
+            if (GameManager.PlayerLevel <= 2) 
+            {
+                effectiveHazardChance = 0.7f; 
+            }
+
+            if (activeHazard == null && Random.value < effectiveHazardChance)
             {
                 SpawnHazard();
                 return; 
@@ -123,20 +149,50 @@ public class GridController : MonoBehaviour
 
             // 1.5 Shark Spawn Check (Priority over Fish, Independent of Fisherman)
             // Can happen alongside other things, but limit to 1 active shark
-            if (activeShark == null && Random.value < sharkChance)
+            
+            // User Request: "when player is still low level around level 1 -2 dont spawn the shark hazzard yet"
+            if (GameManager.PlayerLevel > 2)
             {
-                SpawnShark();
-                // If we spawn a shark, maybe skip fish spawning this frame to reduce chaos?
-                return;
+                // User Request: "Shark should appear more when user reaches level 4 5 6"
+                float effectiveSharkChance = Mathf.Max(sharkChance, 0.15f); // Boost base chance
+                
+                if (GameManager.PlayerLevel >= 4)
+                {
+                    effectiveSharkChance = 0.45f; // Much more frequent at high levels
+                }
+
+                if (activeShark == null && Random.value < effectiveSharkChance)
+                {
+                    SpawnShark();
+                    // If we spawn a shark, maybe skip fish spawning this frame to reduce chaos?
+                    return;
+                }
             }
 
             // 2. Fish Count Limit Check
             // OPTIMIZATION: Use static list from Fish class
-            if (Fish.AllFish.Count >= maxFishCount) return;
+            
+            // Get player level early for culling check
+            int playerLevel = GameManager.PlayerLevel;
+
+            if (Fish.AllFish.Count >= maxFishCount)
+            {
+                // CULLING LOGIC:
+                // If the ocean is full, check if we have "Obsolete" fish (Level < PlayerLevel)
+                // that are taking up space. If so, remove them to make room for new, relevant fish.
+                if (CullObsoleteFish(playerLevel))
+                {
+                    // We culled a fish. It will be removed at end of frame.
+                    // Return now, but keep spawnTimer high so we retry spawning immediately next frame.
+                    return;
+                }
+                
+                // If nothing to cull, we are truly full.
+                return;
+            }
             
             // PREDATOR CAP LOGIC:
             // Count how many active fish are predators (Level > PlayerLevel)
-            int playerLevel = GameManager.PlayerLevel;
             int predatorCount = 0;
             
             // Optimization: Iterate over static list
@@ -187,14 +243,13 @@ public class GridController : MonoBehaviour
             Vector2 spawnPos = new Vector2(spawnX, spawnY);
             
             // Difficulty Logic:
-            // Dynamic Spawning based on Player Level (Applies to ALL levels).
+            // User Request: 80% Current Level (Eatable), 20% Next Level (Predator)
+            // Logic slides with Player Level.
             
             int spawnLevel = 1;
             
-            // Weights configuration
-            // 90% Chance for Eatable (<= PlayerLevel) - "More eatable fish"
-            // 10% Chance for Predator (> PlayerLevel) - "Less predator"
-            float eatableChance = 0.90f; 
+            // 80% Chance for Eatable (Current Level)
+            float eatableChance = 0.80f; 
             
             // If we hit the predator cap, we FORCE eatable fish (100% chance)
             if (forceEatable)
@@ -204,73 +259,61 @@ public class GridController : MonoBehaviour
             
             if (Random.value < eatableChance)
             {
-                // === EATABLE POOL (Generic for ALL Levels) ===
-                // Logic: Heavily favor Current Level (High XP) and Previous Level (Med XP).
+                // === EATABLE POOL (80% Total) ===
                 
-                if (playerLevel == 1)
+                // User Request: "Dont stop spawning lower level fishes entirely"
+                // Balanced Distribution:
+                // - 50% chance for Current Level (Primary Food)
+                // - 50% chance for Any Lower Level (Ambient/Easy Food)
+                // This results in roughly: 40% Current, 40% Lower, 20% Predator.
+                
+                if (playerLevel > 1 && Random.value < 0.5f)
                 {
-                    // Level 1 Exception: Can only eat Level 1
-                    spawnLevel = 1;
+                     // Spawn any lower level (1 to PlayerLevel-1)
+                     spawnLevel = Random.Range(1, playerLevel);
                 }
                 else
                 {
-                    float roll = Random.value;
-                    // Modified Spawn Logic (User Request):
-                    // "Spawn fishes that has lower than current player level"
-                    // We reduced Current Level chance (30%) and increased Lower Level chance (70%)
-                    
-                    if (roll < 0.30f) 
-                    {
-                        // 30% Chance: Current Level (Most rewarding)
-                        spawnLevel = playerLevel;
-                    }
-                    else if (roll < 0.80f)
-                    {
-                        // 50% Chance: One Level Below
-                        spawnLevel = Mathf.Max(1, playerLevel - 1);
-                    }
-                    else
-                    {
-                        // 20% Chance: Older Levels (Filler)
-                        // Range: [1 ... PlayerLevel - 2]
-                        int maxLow = Mathf.Max(1, playerLevel - 2);
-                        spawnLevel = Random.Range(1, maxLow + 1);
-                    }
+                     // Spawn fish of the current player level
+                     spawnLevel = playerLevel;
                 }
             }
             else
             {
-                // === PREDATOR POOL (Generic for ALL Levels) ===
-                // Logic: Mostly spawn Immediate Threat (Level + 1).
-                
-                if (playerLevel == 1)
-                {
-                    // Level 1 Exception: strictly spawn Level 2 predators only.
-                    spawnLevel = 2;
-                }
-                else
-                {
-                    // Level > 1: Introduce variance
-                    // 80% Chance: Immediate Threat (+1)
-                    // 20% Chance: Big Threat (+2)
-                    if (Random.value < 0.8f)
-                    {
-                        spawnLevel = playerLevel + 1;
-                    }
-                    else
-                    {
-                        spawnLevel = playerLevel + 2;
-                    }
-                }
+                // === PREDATOR POOL (20% Total) ===
+                // Spawn fish of the next level
+                spawnLevel = playerLevel + 1;
             }
 
-            // Determine Prefab first to apply specific logic (e.g. Schooling for L01-00)
-            Fish prefabToSpawn = enemyLibrary.GetRandomPrefab(spawnLevel);
+            if (spawnLevel > 6) spawnLevel = 6;
+            
+            // Debug Log for verification
+            // Debug.Log($"Spawning Level {spawnLevel} Fish (Player Level: {playerLevel}) | Eatable Chance: {eatableChance}");
+
+            // Determine Prefab
+            // User Request: Check for prefab name correctly and check their assigned level
+            string targetName = "level " + spawnLevel + " fish";
+            Fish prefabToSpawn = enemyLibrary.GetPrefabByName(spawnLevel, targetName);
+            
+            // Fallback if specific name not found (just in case)
+            if (prefabToSpawn == null)
+            {
+                prefabToSpawn = enemyLibrary.GetRandomPrefab(spawnLevel);
+            }
             
             if (prefabToSpawn != null)
             {
-                // SCHOOLING LOGIC: Level 1, L01-00, 90% Chance
-                if (spawnLevel == 1 && prefabToSpawn.name.Contains("L01-00") && Random.value < 0.9f)
+                // Verification: Ensure the prefab's level matches our intended spawn level
+                if (prefabToSpawn.Level != spawnLevel)
+                {
+                    Debug.LogWarning($"Spawn Mismatch! Intended: {spawnLevel}, Prefab: {prefabToSpawn.name} has Level {prefabToSpawn.Level}");
+                    // We continue spawning, as the user might have custom setups, but we warned them.
+                }
+
+                // SCHOOLING LOGIC: Level 1, L01-00 (level 1 fish)
+                // User Request: "spawn less schooling fish spawn more alone fish"
+                // Reduced chance from 90% to 10% (so 90% chance to be alone)
+                if (spawnLevel == 1 && prefabToSpawn.name.Contains("level 1 fish") && Random.value < 0.1f)
                 {
                     // Create School
                     GameObject schoolObj = new GameObject("FishSchool");
@@ -278,16 +321,27 @@ public class GridController : MonoBehaviour
                     bool movingRight = (spawnX < 0); 
                     school.Initialize(movingRight);
                     
+                    // User Request: "group of babies fish form together"
+                    // Reduced count to prevent crowding/jitter (3 to 5 fish)
                     int schoolSize = Random.Range(3, 6);
                     
                     for (int s = 0; s < schoolSize; s++)
                     {
-                        // Tighter formation (1.0f instead of 2.0f)
-                        Vector2 schoolOffset = Random.insideUnitCircle * 1.0f;
+                        // "Natural Formation": 
+                        // Use a slightly larger, irregular spread (0.5f to 1.5f radius)
+                        // This prevents them from being too perfectly circular or too tight
+                        Vector2 schoolOffset = Random.insideUnitCircle * Random.Range(0.5f, 2.0f);
+                        
+                        // Stretch horizontally to look like they are swimming in a line/group
+                        schoolOffset.x *= 1.5f; 
+
                         Vector2 finalPos = spawnPos + schoolOffset;
                         finalPos.y = Mathf.Clamp(finalPos.y, -14f, 14f);
                         
-                        Fish fish = enemyLibrary.SpawnSpecific(prefabToSpawn, finalPos, 0f, 0f, spawnLevel);
+                        // FIX: Don't override the prefab's inherent level. 
+                        // The user has carefully set up prefabs with specific levels/sprites.
+                        // Passing '0' or '-1' as overrideLevel to respect the prefab's data.
+                        Fish fish = enemyLibrary.SpawnSpecific(prefabToSpawn, finalPos, 0f, 0f, -1);
                         if (fish != null)
                         {
                             fish.school = school;
@@ -299,7 +353,8 @@ public class GridController : MonoBehaviour
                 else
                 {
                     // Spawn Single (10% chance for L01-00, or 100% for others)
-                    Fish fish = enemyLibrary.SpawnSpecific(prefabToSpawn, spawnPos, 0f, 0f, spawnLevel);
+                    // FIX: Don't override level. Respect Prefab settings.
+                    Fish fish = enemyLibrary.SpawnSpecific(prefabToSpawn, spawnPos, 0f, 0f, -1);
                     if (fish != null)
                     {
                         OrientFish(fish, spawnPos, new Vector2(cam.transform.position.x, spawnY));
@@ -309,6 +364,55 @@ public class GridController : MonoBehaviour
             
             // Note: We don't save these to GridBlocks because they are temporary "passers-by"
         }
+    }
+
+    //==============================| Helpers |========================//
+
+    private bool CullObsoleteFish(int playerLevel)
+    {
+        if (Camera.main == null) return false;
+
+        // Calculate Camera Bounds (with margin)
+        float camHeight = 2f * Camera.main.orthographicSize;
+        float camWidth = camHeight * Camera.main.aspect;
+        Vector3 camPos = Camera.main.transform.position;
+        
+        // Define a bounding box for the visible area + margin
+        // Fish outside this box are candidates for culling
+        Bounds viewBounds = new Bounds(new Vector3(camPos.x, camPos.y, 0), new Vector3(camWidth + 5f, camHeight + 5f, 100f));
+
+        // Define a larger bounding box for "Distant" culling (Cleanup)
+        // Any fish that wanders this far (high level or not) should be removed to free up memory/slots
+        Bounds distantBounds = new Bounds(new Vector3(camPos.x, camPos.y, 0), new Vector3(camWidth + 30f, camHeight + 30f, 100f));
+
+        // Find a candidate
+        foreach (var fish in Fish.AllFish)
+        {
+            if (fish == null) continue;
+
+            // Condition 0: Is Way Off-Screen? (Universal Cleanup)
+            // This handles High-Level fish that leave the screen and keep going.
+            if (!distantBounds.Contains(fish.transform.position))
+            {
+                Destroy(fish.gameObject);
+                return true; 
+            }
+
+            // Condition 1: Is Obsolete? (Lower level than player)
+            // We want to keep current level fish and higher level predators.
+            if (fish.Level < playerLevel)
+            {
+                // Condition 2: Is Off-Screen?
+                if (!viewBounds.Contains(fish.transform.position))
+                {
+                    // Found one! Cull it.
+                    Destroy(fish.gameObject);
+                    return true; // Culled one, job done.
+                }
+            }
+        }
+
+        return false;
     }
 
     private void SpawnHazard()
@@ -414,9 +518,15 @@ public class GridController : MonoBehaviour
             
             // Spawn at top, random X within Fixed World Bounds
             // User Request: "spawn based on the game sense itself", not camera.
-            // Using -40 to 40 to stay within the -45 to 45 world limit.
-            float spawnX = Random.Range(-40f, 40f);
+            // But also: "dont spawn outside of the background or the player bounderies"
+            // We clamp spawnX to be within the visible width (plus margin) to ensure it's "in play".
             
+            float bgLimit = halfWidth - 1f; // Keep it slightly inside camera/bg edges
+            float spawnX = Random.Range(-bgLimit, bgLimit);
+            
+            // Offset by camera position to keep it relative to view if camera moves
+            spawnX += cam.transform.position.x;
+
             // Fixed Surface Level Spawning (User Request: "not based on player camera")
             // Game vertical bounds are approx -14 to 14. 
             // We spawn high enough (22f) to ensure the top of the line/rod is off-screen initially,
@@ -534,7 +644,7 @@ public class GridController : MonoBehaviour
                 }
             }
 
-            shark.Initialize(direction, warningIconPrefab, warningIconSprite, sharkWarningSound, sharkAttackSound, pMat, pTex);
+            shark.Initialize(direction, warningIconPrefab, warningIconSprite, sharkWarningSound, sharkAttackSound, sharkSwimSound, pMat, pTex);
         }
     }
 

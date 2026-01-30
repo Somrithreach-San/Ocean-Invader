@@ -6,8 +6,6 @@ using Rhinotap.Toolkit;
 
 public class GuiManager : Singleton<GuiManager>
 {
-    
-
     [SerializeField]
     private Image XpBar;
 
@@ -19,7 +17,10 @@ public class GuiManager : Singleton<GuiManager>
     [SerializeField]
     private Color currentColor = new Color(1f, 1f, 1f, 1f); // Full white
     [SerializeField]
-    private Color lockedColor = new Color(0f, 0f, 0f, 0.5f); // Semi-transparent black
+    private Color lockedColor = Color.black; // Solid black for silhouette effect
+    [SerializeField]
+    private Sprite warningIconSprite; // Sprite for the warning icon on locked fishes
+
 
 
     [SerializeField]
@@ -34,7 +35,7 @@ public class GuiManager : Singleton<GuiManager>
     [Header("Game Over Messages")]
     [SerializeField]
     [TextArea]
-    private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
+private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
     [SerializeField]
     [TextArea]
     private string defeatMessage = "BüayammþgeTot";
@@ -45,10 +46,36 @@ public class GuiManager : Singleton<GuiManager>
     [SerializeField]
     private Text ScoreText;
     private Text messageText;
+    
+    // Floating Text
+    [Header("Floating Text")]
+    [SerializeField]
+    private GameObject floatingTextPrefab; 
+    [SerializeField] 
+    private int poolSize = 20;
+    private Queue<GameObject> floatingTextPool = new Queue<GameObject>();
+
+    private float targetXpFill = 0f;
 
     // Start is called before the first frame update
     void Start()
     {
+        // Simple fallback for ACTIVE objects only (Cheap, fixes dark screen if unassigned)
+        if (pausedBg == null) pausedBg = GameObject.Find("PausedBG");
+        if (ScoreScreen == null) ScoreScreen = GameObject.Find("ScoreScreen");
+
+        // Ensure overlays are hidden at start (Fix for Black Screen)
+        if (pausedBg != null) pausedBg.SetActive(false);
+        if (ScoreScreen != null) ScoreScreen.SetActive(false);
+
+        // Apply Font to ScoreText Template (if available) to fix "Default English" look
+        if (ScoreText != null && messageFont != null)
+        {
+            ScoreText.font = messageFont;
+        }
+
+        InitializeFloatingTextPool();
+
         // Setup Message Text (Clone ScoreText)
         if (messageText == null && ScoreText != null)
         {
@@ -123,6 +150,24 @@ public class GuiManager : Singleton<GuiManager>
              }
              XpBar.fillAmount = 0f;
         }
+
+        // Ensure UI overlays are hidden at start (Fix Black Screen)
+        if (pausedBg != null) pausedBg.SetActive(false);
+        if (ScoreScreen != null) ScoreScreen.SetActive(false);
+        if (pauseBtn != null) pauseBtn.SetActive(true);
+        if (resumeBtn != null) resumeBtn.SetActive(false);
+
+        // Fix: Ensure Main UI Canvas is above Shark Warning Canvas (Order 999)
+        if (pausedBg != null)
+        {
+            Canvas rootCanvas = pausedBg.GetComponentInParent<Canvas>();
+            if (rootCanvas != null)
+            {
+                // Ensure we are active to set this? No, component access is fine.
+                // We want the Pause Menu to cover the Warning Icon.
+                rootCanvas.sortingOrder = 2000; 
+            }
+        }
     }
 
     private void FixPauseLayout()
@@ -161,21 +206,6 @@ public class GuiManager : Singleton<GuiManager>
         // Calculate progress within current level (0 to 1)
         float levelProgress = (float)currentXP / (float)maxXp;
 
-        // Visual-Based Progress Logic
-        // We want the bar to fill from the "Start Icon" of the current level to the "End Icon" of the current level.
-        // Start Icon = Icon for currentLevel (or start of bar if level 1)
-        // End Icon = Icon for currentLevel + 1
-
-        // Assumptions:
-        // growthIcons[0] corresponds to Level 1 Start? Or Level 1 End?
-        // Usually in these games:
-        // [Icon 1] ----------- [Icon 2]
-        // Level 1 progress fills the gap between Icon 1 and Icon 2.
-        
-        // Let's assume growthIcons is ordered: Icon 0 (Lvl 1), Icon 1 (Lvl 2), etc.
-        // If we are Level 1: We go from Icon 0 to Icon 1.
-        // If we are Level 2: We go from Icon 1 to Icon 2.
-
         if (growthIcons != null && growthIcons.Length > 0)
         {
             // Determine Start Position
@@ -206,37 +236,247 @@ public class GuiManager : Singleton<GuiManager>
                 endPos = GetNormalizedPosition(growthIcons[endIdx].rectTransform);
             }
 
-            // REMOVED: Early return for max level so we can see progress through the final level
-            // if (currentLevel >= maxLevels) ...
-
             // Interpolate
             float finalFill = Mathf.Lerp(startPos, endPos, levelProgress);
-            XpBar.fillAmount = finalFill;
+            
+            // Set Target for Smooth Animation
+            targetXpFill = finalFill;
         }
         else
         {
             // Fallback to simple math if icons are missing
             float segmentSize = 1f / (float)maxLevels;
             float totalProgress = ((currentLevel - 1) * segmentSize) + (levelProgress * segmentSize);
-            XpBar.fillAmount = totalProgress;
+            targetXpFill = totalProgress;
         }
+    }
+
+    private void InitializeFloatingTextPool()
+    {
+        Transform parent = null;
+        if (XpBar != null) parent = XpBar.transform.parent;
+        else if (ScoreText != null) parent = ScoreText.transform.parent;
+        else parent = transform;
+
+        GameObject template = (ScoreText != null) ? ScoreText.gameObject : null;
+        if (template == null && floatingTextPrefab != null) template = floatingTextPrefab;
+
+        if (template == null) return;
+
+        floatingTextPool.Clear(); // Ensure pool is clean before init
+        for (int i = 0; i < poolSize; i++)
+        {
+            GameObject obj = Instantiate(template, parent);
+            obj.name = "FloatingTextPool_" + i;
+            obj.SetActive(false);
+            
+            // Add Outline for visibility (Feeding Frenzy style) - Removed per request for cleaner/smaller look
+            /*
+            if (obj.GetComponent<Outline>() == null)
+            {
+                 Outline outline = obj.AddComponent<Outline>();
+                 outline.effectColor = Color.black;
+                 outline.effectDistance = new Vector2(2, -2);
+            }
+            */
+
+            // Ensure Font is applied
+            if (messageFont != null)
+            {
+                Text t = obj.GetComponent<Text>();
+                if (t != null) t.font = messageFont;
+            }
+            
+            floatingTextPool.Enqueue(obj);
+        }
+    }
+
+    private GameObject GetFloatingTextFromPool()
+    {
+        while (floatingTextPool.Count > 0)
+        {
+            GameObject obj = floatingTextPool.Dequeue();
+            if (obj != null)
+            {
+                obj.SetActive(true);
+                // Re-apply font in case it was lost/changed
+                if (messageFont != null)
+                {
+                     Text t = obj.GetComponent<Text>();
+                     if (t != null) t.font = messageFont;
+                }
+                return obj;
+            }
+        }
+
+        // If pool is empty, fallback
+        Transform parent = null;
+        if (XpBar != null) parent = XpBar.transform.parent;
+        else if (ScoreText != null) parent = ScoreText.transform.parent;
+        else parent = transform;
+        
+        GameObject template = (ScoreText != null) ? ScoreText.gameObject : null;
+        if (template == null && floatingTextPrefab != null) template = floatingTextPrefab;
+        
+        if (template != null)
+        {
+            GameObject objFallback = Instantiate(template, parent);
+            objFallback.name = "FloatingXP_Fallback";
+            objFallback.SetActive(true);
+            
+            // Add Outline - Removed
+            /*
+            if (objFallback.GetComponent<Outline>() == null)
+            {
+                 Outline outline = objFallback.AddComponent<Outline>();
+                 outline.effectColor = Color.black;
+                 outline.effectDistance = new Vector2(2, -2);
+            }
+            */
+            
+            return objFallback;
+        }
+        return null;
+    }
+
+    private void ReturnFloatingTextToPool(GameObject obj)
+    {
+        if (obj == null) return;
+        obj.SetActive(false);
+        floatingTextPool.Enqueue(obj);
+    }
+
+    public void ShowFloatingText(Vector3 worldPos, string text, Color color)
+    {
+        GameObject obj = GetFloatingTextFromPool();
+        if (obj == null) 
+        {
+            return;
+        }
+
+        RectTransform rt = obj.GetComponent<RectTransform>();
+        Text txt = obj.GetComponent<Text>();
+
+        // Ensure it's last sibling to be on top
+        obj.transform.SetAsLastSibling();
+        // Reset Scale
+        obj.transform.localScale = Vector3.one;
+
+        if (txt != null)
+        {
+            txt.resizeTextForBestFit = false; // Disable auto-size to ensure it stays small
+            txt.text = text;
+            txt.color = color;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.fontSize = 15; // Increased to 15 (User Request)
+            txt.fontStyle = FontStyle.Bold; // Bold (User Request)
+        }
+
+        // Position
+        if (Camera.main != null)
+        {
+            // Spawn slightly above the eaten fish (Offset Y)
+            Vector3 offsetPos = worldPos + Vector3.up * 0.8f;
+            Vector3 screenPos = Camera.main.WorldToScreenPoint(offsetPos);
+            if (rt != null) rt.position = screenPos;
+        }
+        
+        // Start Animation
+        StartCoroutine(AnimateFloatingText(obj, rt, txt));
+    }
+
+    private IEnumerator AnimateFloatingText(GameObject obj, RectTransform rt, Text txt)
+    {
+        float duration = 1.0f;
+        float elapsed = 0f;
+        
+        Vector3 startPos = (rt != null) ? rt.position : Vector3.zero;
+        
+        // Arc Logic: Randomize slight left or right drift
+        float driftX = UnityEngine.Random.Range(-20f, 20f); 
+        Vector3 endPos = startPos + Vector3.up * 80f + Vector3.right * driftX;
+
+        // Scale Logic
+        Vector3 originalScale = Vector3.one;
+        if(rt != null) rt.localScale = Vector3.zero; // Start invisible/tiny
+
+        Color startColor = Color.white;
+        if (txt != null) startColor = txt.color;
+        Color endColor = new Color(startColor.r, startColor.g, startColor.b, 0f);
+
+        while (elapsed < duration)
+        {
+            if (obj == null) yield break;
+
+            elapsed += Time.deltaTime;
+            float t = elapsed / duration;
+
+            // 1. Pop In (EaseOutBack)
+            // Scale goes 0 -> 1.2 -> 1.0 quickly in the first 30% of animation
+            if (rt != null)
+            {
+                float scaleDuration = 0.3f;
+                if (t < scaleDuration)
+                {
+                    float st = t / scaleDuration;
+                    float scaleVal = EvaluateEaseOutBack(st); 
+                    rt.localScale = originalScale * scaleVal;
+                }
+                else
+                {
+                    rt.localScale = originalScale;
+                }
+            }
+
+            // 2. Position & Arc
+            if (rt != null)
+            {
+                // Linear move
+                Vector3 currentPos = Vector3.Lerp(startPos, endPos, t);
+                // Add Sine Wave arc (Up and Down)
+                // Sin(0) = 0, Sin(PI/2) = 1, Sin(PI) = 0
+                float arcOffset = Mathf.Sin(t * Mathf.PI) * 10f; 
+                currentPos.y += arcOffset;
+                rt.position = currentPos;
+            }
+
+            // 3. Fade Out (Gradual, non-linear at the end)
+            if (txt != null)
+            {
+                float fadeStart = 0.6f;
+                if (t > fadeStart)
+                {
+                    float ft = (t - fadeStart) / (1f - fadeStart);
+                    // Smoothstep or squared for non-linear fade
+                    txt.color = Color.Lerp(startColor, endColor, ft * ft);
+                }
+                else
+                {
+                    txt.color = startColor;
+                }
+            }
+            
+            yield return null;
+        }
+
+        ReturnFloatingTextToPool(obj);
+    }
+
+    // Helper for "Pop" effect
+    private float EvaluateEaseOutBack(float x) 
+    {
+        float c1 = 1.70158f;
+        float c3 = c1 + 1;
+        return 1 + c3 * Mathf.Pow(x - 1, 3) + c1 * Mathf.Pow(x - 1, 2);
     }
 
     private float GetNormalizedPosition(RectTransform target)
     {
         if (XpBar == null || target == null) return 0f;
         
-        // We need the position relative to the XpBar's width.
-        // Assuming XpBar is a Filled Image that spans the full width of the container area.
-        // We can compare world X positions.
-        
         RectTransform barRect = XpBar.rectTransform;
-        
-        // Get World Corners of the bar to find the start (left) and width
         Vector3[] corners = new Vector3[4];
         barRect.GetWorldCorners(corners);
-        // corners[0] is bottom-left
-        // corners[2] is top-right
         
         float startX = corners[0].x;
         float totalWidth = corners[2].x - corners[0].x;
@@ -244,8 +484,6 @@ public class GuiManager : Singleton<GuiManager>
         if (totalWidth <= 0) return 0f;
 
         float targetX = target.position.x;
-        
-        // Calculate normalized position (0 to 1)
         float normalized = (targetX - startX) / totalWidth;
         
         return Mathf.Clamp01(normalized);
@@ -259,36 +497,34 @@ public class GuiManager : Singleton<GuiManager>
         {
             if (growthIcons[i] == null) continue;
 
-            // Icons are 0-indexed, Levels are 1-indexed.
-            // Icon 0 = Level 1, Icon 1 = Level 2, etc.
             int iconLevel = i + 1;
+
+            // --- Warning Icon Cleanup ---
+            // We check for and destroy any existing "WarningIcon" objects to clean up the scene.
+            Transform warningTrans = growthIcons[i].transform.Find("WarningIcon");
+            if (warningTrans != null)
+            {
+                Destroy(warningTrans.gameObject);
+            }
+            // ---------------------------
 
             if (iconLevel < currentLevel)
             {
-                // Past levels (Completed) - Maybe dim them or keep them full color?
-                // Let's keep them full color to show progress
+                // Past Levels: Completed Color (White)
                 growthIcons[i].color = completedColor;
-                // Optional: Make them smaller or transparent?
-                // For now, let's keep them fully visible as "trophies"
+                growthIcons[i].transform.localScale = Vector3.one;
             }
             else if (iconLevel == currentLevel)
             {
-                // Current Level - Highlighted
+                // Current Level: Highlighted (White) + Scaled Up (1.2x)
                 growthIcons[i].color = currentColor;
-                // Optional: Scale up slightly?
-                growthIcons[i].transform.localScale = Vector3.one * 1.2f; 
+                growthIcons[i].transform.localScale = Vector3.one * 1.2f;
             }
             else
             {
-                // Future Levels - Locked/Black
+                // Future Levels: Locked (Solid Black Silhouette)
                 growthIcons[i].color = lockedColor;
                 growthIcons[i].transform.localScale = Vector3.one;
-            }
-            
-            // Reset scale for non-current levels
-            if(iconLevel != currentLevel)
-            {
-                 growthIcons[i].transform.localScale = Vector3.one;
             }
         }
     }
@@ -297,48 +533,52 @@ public class GuiManager : Singleton<GuiManager>
     {
         if( pauseBtn == null || resumeBtn == null)
         {
-            Debug.Log("Missing pause/resume btns");
+            // Debug.Log("Missing pause/resume btns");
             return;
         }
 
-        
         if( pauseBtn.activeSelf == true)
         {
-            //game paused
             pauseBtn.SetActive(false);
             resumeBtn.SetActive(true);
             pausedBg.SetActive(true);
-            
-            // Re-apply layout fix to ensure it stays correct
             FixPauseLayout();
-
-            // Ensure Resume button is on top of the background
             resumeBtn.transform.SetAsLastSibling();
         }else
         {
-            //Resume
             pauseBtn.SetActive(true);
             resumeBtn.SetActive(false);
             pausedBg.SetActive(false);
         }
     }
 
-
     private void ShowScore(int score = 0)
     {
         if (ScoreScreen == null || ScoreText == null) return;
         ScoreScreen.SetActive(true);
-        // Hide score text as per user request (use message instead)
         ScoreText.gameObject.SetActive(false);
-        // ScoreText.text = score.ToString(); 
+        
+        // Fix: Removed score display logic per user request
+        /*
+        if (messageText != null)
+        {
+            if (messageText.gameObject.activeSelf && !messageText.text.Contains("Score:"))
+            {
+                messageText.text += "\nScore: " + score.ToString();
+            }
+            else
+            {
+                messageText.text = "Score: " + score.ToString();
+            }
+            messageText.gameObject.SetActive(true);
+        }
+        */
     }
 
     private void ShowGameMessage(string message)
     {
         if (ScoreScreen == null) return;
         ScoreScreen.SetActive(true);
-        
-        // Hide score text as per user request (Hide point text for now)
         if (ScoreText != null) ScoreText.gameObject.SetActive(false);
         
         if (messageText != null)
@@ -356,9 +596,48 @@ public class GuiManager : Singleton<GuiManager>
         if (messageText != null) messageText.gameObject.SetActive(false);
     }
 
-    // Update is called once per frame
     void Update()
     {
+        // Smooth XP Logic
+        if (XpBar != null && Mathf.Abs(XpBar.fillAmount - targetXpFill) > 0.001f)
+        {
+            XpBar.fillAmount = Mathf.Lerp(XpBar.fillAmount, targetXpFill, Time.deltaTime * 5f);
+        }
+    }
+
+    // Helper to find UI objects even if inactive
+    private GameObject FindUIObjectByName(params string[] names)
+    {
+        foreach (string name in names)
+        {
+            GameObject obj = GameObject.Find(name);
+            if (obj != null) return obj;
+        }
         
+        Canvas[] canvases = Resources.FindObjectsOfTypeAll<Canvas>();
+        foreach (Canvas c in canvases)
+        {
+            if (c.gameObject.scene.rootCount == 0) continue; 
+            foreach (string name in names)
+            {
+                Transform t = FindDeepChild(c.transform, name);
+                if (t != null) return t.gameObject;
+            }
+        }
+        return null;
+    }
+
+    private Transform FindDeepChild(Transform parent, string name)
+    {
+        foreach (Transform child in parent)
+        {
+            if (child.name.Equals(name, System.StringComparison.OrdinalIgnoreCase)) return child;
+            Transform result = FindDeepChild(child, name);
+            if (result != null) return result;
+        }
+        return null;
     }
 }
+
+
+
