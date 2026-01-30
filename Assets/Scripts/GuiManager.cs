@@ -401,12 +401,17 @@ private string victoryMessage = "GbGrsaTr Gñk)anrYcCIvitkñúgvKÁenH";
             txt.fontStyle = FontStyle.Bold; 
             
             // Add Shadow for better contrast if missing
+            /*
             if (obj.GetComponent<Shadow>() == null)
             {
                 Shadow s = obj.AddComponent<Shadow>();
                 s.effectColor = new Color(0, 0, 0, 0.5f);
                 s.effectDistance = new Vector2(2, -2);
             }
+            */
+            // Remove Shadow if it exists (per user request)
+            Shadow shadow = obj.GetComponent<Shadow>();
+            if (shadow != null) Destroy(shadow);
         }
         
         if (tmp != null)

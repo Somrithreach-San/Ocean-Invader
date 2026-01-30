@@ -29,6 +29,12 @@ public class Fish : MonoBehaviour
     public FishSchool school;
     public Vector2 formationOffset;
 
+    [Header("Bobbing Animation")]
+    [SerializeField] private float bobSpeed = 2f;
+    [SerializeField] private float bobAmount = 0.1f;
+    private float randomBobOffset;
+    private float defaultYLocal;
+
     private Vector3 initialScale;
     private bool initialized = false;
 
@@ -36,6 +42,12 @@ public class Fish : MonoBehaviour
     public static List<Fish> AllFish = new List<Fish>();
     private GameManager cachedGameManager;
     private Transform cachedPlayerTransform;
+
+    // Food Chain Logic Vars
+    private List<Collider2D> collisionBuffer = new List<Collider2D>(8);
+    private ContactFilter2D contactFilter;
+    private Collider2D myCollider;
+    private float eatCheckTimer = 0f;
 
     public void Die()
     {
@@ -83,6 +95,19 @@ public class Fish : MonoBehaviour
         }
 
         UpdateCollision();
+
+        // Initialize Bobbing
+        randomBobOffset = Random.Range(0f, 100f);
+        if (gfx != null && gfx != transform)
+        {
+            defaultYLocal = gfx.localPosition.y;
+        }
+
+        // Setup Manual Collision Check (Bypasses Physics Matrix "Enemy vs Enemy" ignore)
+        myCollider = GetComponent<Collider2D>();
+        contactFilter = new ContactFilter2D();
+        contactFilter.useTriggers = true; 
+        contactFilter.useLayerMask = false; // Check against everything, then filter by Component
     }
 
     private void UpdateCollision()
@@ -147,6 +172,13 @@ public class Fish : MonoBehaviour
 
     private void Update()
     {
+        // Bobbing Animation
+        if (gfx != null && gfx != transform)
+        {
+            float newY = defaultYLocal + Mathf.Sin(Time.time * bobSpeed + randomBobOffset) * bobAmount;
+            gfx.localPosition = new Vector3(gfx.localPosition.x, newY, gfx.localPosition.z);
+        }
+
         // Despawn logic: 
         // Simply use distance from player. 
         // This allows fish to enter/exit the screen freely without hitting an invisible "world boundary" wall.
@@ -171,10 +203,47 @@ public class Fish : MonoBehaviour
                 return;
             }
         }
+
+        // Manual Food Chain Check
+        // Fixes issue where Physics Matrix prevents Enemy-Enemy trigger events
+        eatCheckTimer += Time.deltaTime;
+        if (eatCheckTimer > 0.2f) // Check 5 times per second
+        {
+            eatCheckTimer = 0f;
+            CheckFoodChain();
+        }
+    }
+
+    private void CheckFoodChain()
+    {
+        if (myCollider == null) return;
+
+        // OverlapCollider finds anything touching 'myCollider' regardless of Physics Matrix (if configured right)
+        // It uses the actual collider shape (Capsule) which is better than OverlapCircle.
+        int count = Physics2D.OverlapCollider(myCollider, contactFilter, collisionBuffer);
+        
+        for (int i = 0; i < count; i++)
+        {
+             Collider2D col = collisionBuffer[i];
+             if (col == null || col.gameObject == gameObject) continue;
+
+             Fish otherFish = col.GetComponent<Fish>();
+             if (otherFish != null)
+             {
+                 // I am bigger. I eat the smaller fish.
+                 if (this.level > otherFish.Level)
+                 {
+                     otherFish.Die();
+                     // Optional: PlayEatEffect(); if we had reference
+                 }
+             }
+        }
     }
 
     private void Awake()
     {
+        SetupRigidbody();
+
         gfx = GetComponentInChildren<SpriteRenderer>()?.transform;
         if (gfx != null)
         {
@@ -196,6 +265,21 @@ public class Fish : MonoBehaviour
     }
 
 
+
+    private void SetupRigidbody()
+    {
+        Rigidbody2D rb = GetComponent<Rigidbody2D>();
+        if (rb == null)
+        {
+            rb = gameObject.AddComponent<Rigidbody2D>();
+            // NOTE: We use Dynamic (isKinematic = false) because FishAI uses 'linearVelocity' to move.
+            // If we set isKinematic = true, the fish will not move!
+            rb.isKinematic = false; 
+            rb.gravityScale = 0f;
+            rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+            rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+        }
+    }
 
     public void SetLevel(int newLevel)
     {
@@ -274,6 +358,37 @@ public class Fish : MonoBehaviour
         }
     }
 
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        // Safety check
+        if (collision == null) return;
 
+        // Check if we collided with another Fish
+        // We use GetComponent instead of Tag to be robust across different fish types
+        Fish otherFish = collision.GetComponent<Fish>();
+        
+        if (otherFish != null)
+        {
+            // Self-collision check
+            if (otherFish == this) return;
+
+            // FOOD CHAIN LOGIC
+            // "If they ever to collide the bigger level fish eat the smaller level fish"
+            
+            if (this.level > otherFish.Level)
+            {
+                // I am bigger. I eat the smaller fish.
+                // We kill the other fish.
+                otherFish.Die();
+
+                // Optional: We could play an eat sound or effect here if we had references.
+                // For now, the logic is the priority.
+            }
+            // If I am smaller (this.level < otherFish.Level), I do nothing.
+            // The other fish's OnTriggerEnter2D will handle eating me.
+            
+            // If levels are equal, they ignore each other (peaceful co-existence / schooling).
+        }
+    }
 }
 

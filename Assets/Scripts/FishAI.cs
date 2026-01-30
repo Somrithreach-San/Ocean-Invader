@@ -398,8 +398,16 @@ public class FishAI : MonoBehaviour
             if (c.gameObject == gameObject) continue;
 
             // Optimization: TryGetComponent is faster and safer
-            if (c.TryGetComponent<FishAI>(out _))
+            if (c.TryGetComponent<Fish>(out Fish otherFish))
             {
+                // CRITICAL FIX: Don't separate from things we can eat!
+                // If I am bigger than the other fish, I should NOT push away from it.
+                // I want to collide with it to eat it.
+                if (fishData != null && fishData.Level > otherFish.Level)
+                {
+                    continue; // Skip separation force for food
+                }
+
                 Vector2 toNeighbor = transform.position - c.transform.position;
                 // Protect against zero magnitude (division by zero)
                 float sqrMag = toNeighbor.sqrMagnitude;

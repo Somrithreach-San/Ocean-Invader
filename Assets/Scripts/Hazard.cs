@@ -100,11 +100,32 @@ public class Hazard : MonoBehaviour
         // We randomize the target depth significantly now (-13 to 12).
         targetY = Random.Range(-13f, 12f); 
 
-        // Safety Check REMOVED: User wants realistic depth variation and will provide longer sprites.
-        // Previously we clamped targetY based on sprite height to avoid "cut off" look at the top.
-        // But this forced short sprites to stay shallow, breaking depth randomization.
+        // CRITICAL FIX: Ensure the hazard does NOT go beyond the bottom boundary.
+        // Even if we randomize deep, we must clamp it so the hook stays on screen.
+        ClampTargetDepth();
         
         ConfigureCollider();
+    }
+
+    private void ClampTargetDepth()
+    {
+        if (spriteRenderer == null) return;
+        
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        float camBottom = cam.transform.position.y - cam.orthographicSize;
+        float spriteHalfHeight = spriteRenderer.bounds.extents.y; // World space half-height
+
+        // The lowest point the center (transform.position) can be 
+        // such that the bottom edge (center - halfHeight) is at camBottom.
+        // We add a small buffer (1.0f) to keep it clearly visible.
+        float minSafeY = camBottom + spriteHalfHeight + 1.0f;
+
+        if (targetY < minSafeY)
+        {
+            targetY = minSafeY;
+        }
     }
 
     private void SetupParticlePosition(GameObject particleObj)
@@ -341,7 +362,8 @@ public class Hazard : MonoBehaviour
         if (overrideDepth.HasValue)
         {
             targetY = overrideDepth.Value;
-            // Safety Check REMOVED (see Awake)
+            // Re-apply clamp to override value to ensure safety
+            ClampTargetDepth();
         }
     }
 
